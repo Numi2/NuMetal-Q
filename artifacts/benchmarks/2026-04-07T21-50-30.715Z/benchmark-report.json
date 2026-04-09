@@ -1,0 +1,398 @@
+{
+  "configuration" : {
+    "iterations" : 9,
+    "warmups" : 2
+  },
+  "metadata" : {
+    "activeProcessorCount" : 10,
+    "generatedAt" : "2026-04-07T21:50:30Z",
+    "hostName" : "T’s MacBook Air",
+    "operatingSystemVersion" : "Version 26.3 (Build 25D5087f)",
+    "physicalMemoryBytes" : 25769803776
+  },
+  "pcsWorkloads" : [
+    {
+      "cpuCommit" : {
+        "maxMilliseconds" : 34.432667,
+        "meanMilliseconds" : 33.11661588888889,
+        "medianMilliseconds" : 33.071709,
+        "minMilliseconds" : 31.99975,
+        "p90Milliseconds" : 34.432667,
+        "p95Milliseconds" : 34.432667,
+        "p99Milliseconds" : 34.432667,
+        "samples" : 9
+      },
+      "cpuOpen" : {
+        "maxMilliseconds" : 2.996375,
+        "meanMilliseconds" : 2.8104813333333336,
+        "medianMilliseconds" : 2.812416,
+        "minMilliseconds" : 2.573833,
+        "p90Milliseconds" : 2.996375,
+        "p95Milliseconds" : 2.996375,
+        "p99Milliseconds" : 2.996375,
+        "samples" : 9
+      },
+      "metalCommit" : {
+        "maxMilliseconds" : 6.529667,
+        "meanMilliseconds" : 5.408074222222222,
+        "medianMilliseconds" : 5.226125,
+        "minMilliseconds" : 4.863792,
+        "p90Milliseconds" : 6.529667,
+        "p95Milliseconds" : 6.529667,
+        "p99Milliseconds" : 6.529667,
+        "samples" : 9
+      },
+      "metalCommitGPU" : {
+        "maxMilliseconds" : 1.2652506120502949,
+        "meanMilliseconds" : 0.2884259964856837,
+        "medianMilliseconds" : 0.05370797589421272,
+        "minMilliseconds" : 0.051791779696941376,
+        "p90Milliseconds" : 1.2652506120502949,
+        "p95Milliseconds" : 1.2652506120502949,
+        "p99Milliseconds" : 1.2652506120502949,
+        "samples" : 9
+      },
+      "metalOpen" : {
+        "maxMilliseconds" : 18.515667,
+        "meanMilliseconds" : 15.601944555555555,
+        "medianMilliseconds" : 16.150333,
+        "minMilliseconds" : 13.097541,
+        "p90Milliseconds" : 18.515667,
+        "p95Milliseconds" : 18.515667,
+        "p99Milliseconds" : 18.515667,
+        "samples" : 9
+      },
+      "metalOpenGPU" : {
+        "maxMilliseconds" : 2.496750093996525,
+        "meanMilliseconds" : 1.295694408731328,
+        "medianMilliseconds" : 1.8967515788972378,
+        "minMilliseconds" : 0.1727081835269928,
+        "p90Milliseconds" : 2.496750093996525,
+        "p95Milliseconds" : 2.496750093996525,
+        "p99Milliseconds" : 2.496750093996525,
+        "samples" : 9
+      },
+      "peakRSSBytes" : 419971072,
+      "workload" : {
+        "name" : "pcs-8",
+        "numVars" : 8
+      }
+    },
+    {
+      "cpuCommit" : {
+        "maxMilliseconds" : 520.286333,
+        "meanMilliseconds" : 490.49712511111113,
+        "medianMilliseconds" : 486.5855,
+        "minMilliseconds" : 477.455083,
+        "p90Milliseconds" : 520.286333,
+        "p95Milliseconds" : 520.286333,
+        "p99Milliseconds" : 520.286333,
+        "samples" : 9
+      },
+      "cpuOpen" : {
+        "maxMilliseconds" : 11.848,
+        "meanMilliseconds" : 10.925097222222222,
+        "medianMilliseconds" : 10.977542,
+        "minMilliseconds" : 10.031708,
+        "p90Milliseconds" : 11.848,
+        "p95Milliseconds" : 11.848,
+        "p99Milliseconds" : 11.848,
+        "samples" : 9
+      },
+      "metalCommit" : {
+        "maxMilliseconds" : 21.417625,
+        "meanMilliseconds" : 18.56695844444444,
+        "medianMilliseconds" : 17.591333,
+        "minMilliseconds" : 17.125542,
+        "p90Milliseconds" : 21.417625,
+        "p95Milliseconds" : 21.417625,
+        "p99Milliseconds" : 21.417625,
+        "samples" : 9
+      },
+      "metalCommitGPU" : {
+        "maxMilliseconds" : 1.02937500923872,
+        "meanMilliseconds" : 0.29766202593843144,
+        "medianMilliseconds" : 0.0722086988389492,
+        "minMilliseconds" : 0.05850009620189667,
+        "p90Milliseconds" : 1.02937500923872,
+        "p95Milliseconds" : 1.02937500923872,
+        "p99Milliseconds" : 1.02937500923872,
+        "samples" : 9
+      },
+      "metalOpen" : {
+        "maxMilliseconds" : 39.132459,
+        "meanMilliseconds" : 37.457111,
+        "medianMilliseconds" : 37.619917,
+        "minMilliseconds" : 35.899833,
+        "p90Milliseconds" : 39.132459,
+        "p95Milliseconds" : 39.132459,
+        "p99Milliseconds" : 39.132459,
+        "samples" : 9
+      },
+      "metalOpenGPU" : {
+        "maxMilliseconds" : 2.370915375649929,
+        "meanMilliseconds" : 1.7824907166262467,
+        "medianMilliseconds" : 1.8146648071706295,
+        "minMilliseconds" : 1.3048751279711723,
+        "p90Milliseconds" : 2.370915375649929,
+        "p95Milliseconds" : 2.370915375649929,
+        "p99Milliseconds" : 2.370915375649929,
+        "samples" : 9
+      },
+      "peakRSSBytes" : 419971072,
+      "workload" : {
+        "name" : "pcs-10",
+        "numVars" : 10
+      }
+    },
+    {
+      "cpuCommit" : {
+        "maxMilliseconds" : 8083.351208,
+        "meanMilliseconds" : 7782.929291555556,
+        "medianMilliseconds" : 7699.131625,
+        "minMilliseconds" : 7563.253,
+        "p90Milliseconds" : 8083.351208,
+        "p95Milliseconds" : 8083.351208,
+        "p99Milliseconds" : 8083.351208,
+        "samples" : 9
+      },
+      "cpuOpen" : {
+        "maxMilliseconds" : 44.938584,
+        "meanMilliseconds" : 42.86072222222222,
+        "medianMilliseconds" : 42.465959,
+        "minMilliseconds" : 40.005208,
+        "p90Milliseconds" : 44.938584,
+        "p95Milliseconds" : 44.938584,
+        "p99Milliseconds" : 44.938584,
+        "samples" : 9
+      },
+      "metalCommit" : {
+        "maxMilliseconds" : 84.088958,
+        "meanMilliseconds" : 78.31763422222222,
+        "medianMilliseconds" : 76.863542,
+        "minMilliseconds" : 74.165208,
+        "p90Milliseconds" : 84.088958,
+        "p95Milliseconds" : 84.088958,
+        "p99Milliseconds" : 84.088958,
+        "samples" : 9
+      },
+      "metalCommitGPU" : {
+        "maxMilliseconds" : 0.8062082342803478,
+        "meanMilliseconds" : 0.27591647166344857,
+        "medianMilliseconds" : 0.15737488865852356,
+        "minMilliseconds" : 0.14504138380289078,
+        "p90Milliseconds" : 0.8062082342803478,
+        "p95Milliseconds" : 0.8062082342803478,
+        "p99Milliseconds" : 0.8062082342803478,
+        "samples" : 9
+      },
+      "metalOpen" : {
+        "maxMilliseconds" : 118.256916,
+        "meanMilliseconds" : 113.76116188888889,
+        "medianMilliseconds" : 114.048083,
+        "minMilliseconds" : 109.000834,
+        "p90Milliseconds" : 118.256916,
+        "p95Milliseconds" : 118.256916,
+        "p99Milliseconds" : 118.256916,
+        "samples" : 9
+      },
+      "metalOpenGPU" : {
+        "maxMilliseconds" : 3.240332007408142,
+        "meanMilliseconds" : 2.2285880210498967,
+        "medianMilliseconds" : 2.516708802431822,
+        "minMilliseconds" : 1.3175862841308117,
+        "p90Milliseconds" : 3.240332007408142,
+        "p95Milliseconds" : 3.240332007408142,
+        "p99Milliseconds" : 3.240332007408142,
+        "samples" : 9
+      },
+      "peakRSSBytes" : 419971072,
+      "workload" : {
+        "name" : "pcs-12",
+        "numVars" : 12
+      }
+    }
+  ],
+  "sealWorkloads" : [
+    {
+      "envelopeBytes" : 4421661,
+      "fuse" : {
+        "maxMilliseconds" : 29.064834,
+        "meanMilliseconds" : 28.577949222222216,
+        "medianMilliseconds" : 28.509334,
+        "minMilliseconds" : 28.145041,
+        "p90Milliseconds" : 29.064834,
+        "p95Milliseconds" : 29.064834,
+        "p99Milliseconds" : 29.064834,
+        "samples" : 9
+      },
+      "gpuFamilyTag" : "apple9",
+      "gpuName" : "Apple M4",
+      "peakRSSBytes" : 413302784,
+      "proofBytes" : 4421425,
+      "seal" : {
+        "maxMilliseconds" : 14496.406416,
+        "meanMilliseconds" : 14392.337722222223,
+        "medianMilliseconds" : 14388.352958,
+        "minMilliseconds" : 14310.408333,
+        "p90Milliseconds" : 14496.406416,
+        "p95Milliseconds" : 14496.406416,
+        "p99Milliseconds" : 14496.406416,
+        "samples" : 9
+      },
+      "seedOne" : {
+        "maxMilliseconds" : 2.324333,
+        "meanMilliseconds" : 2.2698886666666667,
+        "medianMilliseconds" : 2.271791,
+        "minMilliseconds" : 2.217208,
+        "p90Milliseconds" : 2.324333,
+        "p95Milliseconds" : 2.324333,
+        "p99Milliseconds" : 2.324333,
+        "samples" : 9
+      },
+      "seedTwo" : {
+        "maxMilliseconds" : 2.321,
+        "meanMilliseconds" : 2.247995333333334,
+        "medianMilliseconds" : 2.245833,
+        "minMilliseconds" : 2.198709,
+        "p90Milliseconds" : 2.321,
+        "p95Milliseconds" : 2.321,
+        "p99Milliseconds" : 2.321,
+        "samples" : 9
+      },
+      "verify" : {
+        "maxMilliseconds" : 326.408958,
+        "meanMilliseconds" : 323.4300416666667,
+        "medianMilliseconds" : 324.406041,
+        "minMilliseconds" : 319.74325,
+        "p90Milliseconds" : 326.408958,
+        "p95Milliseconds" : 326.408958,
+        "p99Milliseconds" : 326.408958,
+        "samples" : 9
+      },
+      "workload" : {
+        "densityModel" : "sparse",
+        "family" : "pcd-auth",
+        "leftTermsPerRow" : 4,
+        "matrixCount" : 0,
+        "maxGateDegree" : 0,
+        "name" : "auth-policy-sparse",
+        "nonZeroDensity" : 0,
+        "publicInputCount" : 2,
+        "relationModel" : "sparse local aggregate checks",
+        "rightTermsPerRow" : 4,
+        "rowCount" : 64,
+        "scenario" : "multi-factor authorization policy",
+        "sourceLanes" : [
+          {
+            "name" : "balances",
+            "width" : 16
+          },
+          {
+            "name" : "riskFlags",
+            "width" : 1
+          },
+          {
+            "name" : "approvals",
+            "width" : 8
+          }
+        ],
+        "totalNNZ" : 0,
+        "witnessBitWidth" : 0,
+        "witnessLength" : 0
+      }
+    },
+    {
+      "envelopeBytes" : 4636261,
+      "fuse" : {
+        "maxMilliseconds" : 42.598125,
+        "meanMilliseconds" : 36.487745222222216,
+        "medianMilliseconds" : 36.263666,
+        "minMilliseconds" : 33.389583,
+        "p90Milliseconds" : 42.598125,
+        "p95Milliseconds" : 42.598125,
+        "p99Milliseconds" : 42.598125,
+        "samples" : 9
+      },
+      "gpuFamilyTag" : "apple9",
+      "gpuName" : "Apple M4",
+      "peakRSSBytes" : 419971072,
+      "proofBytes" : 4636025,
+      "seal" : {
+        "maxMilliseconds" : 50764.6595,
+        "meanMilliseconds" : 44471.313912000005,
+        "medianMilliseconds" : 42574.1575,
+        "minMilliseconds" : 41310.126125,
+        "p90Milliseconds" : 50764.6595,
+        "p95Milliseconds" : 50764.6595,
+        "p99Milliseconds" : 50764.6595,
+        "samples" : 9
+      },
+      "seedOne" : {
+        "maxMilliseconds" : 3.829916,
+        "meanMilliseconds" : 3.161124888888889,
+        "medianMilliseconds" : 3.059584,
+        "minMilliseconds" : 2.921959,
+        "p90Milliseconds" : 3.829916,
+        "p95Milliseconds" : 3.829916,
+        "p99Milliseconds" : 3.829916,
+        "samples" : 9
+      },
+      "seedTwo" : {
+        "maxMilliseconds" : 4.111333,
+        "meanMilliseconds" : 3.222671333333334,
+        "medianMilliseconds" : 3.125083,
+        "minMilliseconds" : 2.855708,
+        "p90Milliseconds" : 4.111333,
+        "p95Milliseconds" : 4.111333,
+        "p99Milliseconds" : 4.111333,
+        "samples" : 9
+      },
+      "verify" : {
+        "maxMilliseconds" : 443.553792,
+        "meanMilliseconds" : 391.02829144444445,
+        "medianMilliseconds" : 401.931041,
+        "minMilliseconds" : 349.004667,
+        "p90Milliseconds" : 443.553792,
+        "p95Milliseconds" : 443.553792,
+        "p99Milliseconds" : 443.553792,
+        "samples" : 9
+      },
+      "workload" : {
+        "densityModel" : "dense",
+        "family" : "pcd-rollup",
+        "leftTermsPerRow" : 14,
+        "matrixCount" : 0,
+        "maxGateDegree" : 0,
+        "name" : "rollup-settlement-dense",
+        "nonZeroDensity" : 0,
+        "publicInputCount" : 2,
+        "relationModel" : "dense windowed linear aggregation checks",
+        "rightTermsPerRow" : 14,
+        "rowCount" : 64,
+        "scenario" : "batched settlement aggregation",
+        "sourceLanes" : [
+          {
+            "name" : "amounts",
+            "width" : 16
+          },
+          {
+            "name" : "fees",
+            "width" : 16
+          },
+          {
+            "name" : "nonces",
+            "width" : 32
+          },
+          {
+            "name" : "accountWeights",
+            "width" : 16
+          }
+        ],
+        "totalNNZ" : 0,
+        "witnessBitWidth" : 0,
+        "witnessLength" : 0
+      }
+    }
+  ]
+}

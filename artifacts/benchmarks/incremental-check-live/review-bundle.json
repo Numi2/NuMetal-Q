@@ -1,0 +1,11 @@
+{
+  "benchmarkReportJSONPath" : "/Users/home/NuMetal-Q/artifacts/benchmarks/incremental-check-live/benchmark-report.json",
+  "benchmarkReportMarkdownPath" : "/Users/home/NuMetal-Q/artifacts/benchmarks/incremental-check-live/benchmark-report.md",
+  "benchmarkingGuidePath" : "/Users/home/NuMetal-Q/docs/benchmarking.md",
+  "canonicalBackendID" : "lightning",
+  "canonicalSealWireMagic" : "NuSeal",
+  "comparisonTemplatePath" : "/Users/home/NuMetal-Q/artifacts/benchmarks/incremental-check-live/comparison-template.json",
+  "generatedAt" : "2026-04-07T21:59:50Z",
+  "protocolNotePath" : "/Users/home/NuMetal-Q/docs/protocol-note.md",
+  "stateOfTheArtPath" : "/Users/home/NuMetal-Q/docs/state-of-the-art.md"
+}
