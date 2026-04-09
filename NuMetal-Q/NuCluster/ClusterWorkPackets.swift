@@ -446,138 +446,210 @@ public struct ClusterDecomposeWorkResult: Sendable {
     }
 }
 
-public struct HachiClusterSealWorkPacket: Sendable {
-    private static let magic = Data("HachiSealV1".utf8)
+public enum HachiClusterSealOperation: String, Sendable, Codable, Equatable {
+    case commit
+    case open
+}
 
-    public let sealBackendID: String
-    public let sealParamDigest: Data
-    public let statementDigest: [UInt8]
-    public let scheduleDigest: [UInt8]
-    public let witnessCommitmentRoot: [UInt8]
+public struct HachiClusterSealCommitments: Sendable, Codable, Equatable {
+    public let witnessCommitment: HachiPCSCommitment
+    public let matrixEvaluationCommitments: [HachiPCSCommitment]
+    public let blindingCommitments: SpartanBlindingCommitments<HachiPCSCommitment>
 
     public init(
-        sealBackendID: String,
-        sealParamDigest: [UInt8],
-        statementDigest: [UInt8],
-        scheduleDigest: [UInt8],
-        witnessCommitmentRoot: [UInt8]
+        witnessCommitment: HachiPCSCommitment,
+        matrixEvaluationCommitments: [HachiPCSCommitment],
+        blindingCommitments: SpartanBlindingCommitments<HachiPCSCommitment>
     ) {
-        self.sealBackendID = sealBackendID
-        self.sealParamDigest = Data(sealParamDigest)
-        self.statementDigest = statementDigest
-        self.scheduleDigest = scheduleDigest
-        self.witnessCommitmentRoot = witnessCommitmentRoot
+        self.witnessCommitment = witnessCommitment
+        self.matrixEvaluationCommitments = matrixEvaluationCommitments
+        self.blindingCommitments = blindingCommitments
+    }
+}
+
+public struct HachiClusterSealOpenings: Sendable, Codable, Equatable {
+    public let pcsOpeningProof: HachiPCSBatchOpeningProof
+    public let blindingOpeningProof: HachiPCSBatchOpeningProof
+
+    public init(
+        pcsOpeningProof: HachiPCSBatchOpeningProof,
+        blindingOpeningProof: HachiPCSBatchOpeningProof
+    ) {
+        self.pcsOpeningProof = pcsOpeningProof
+        self.blindingOpeningProof = blindingOpeningProof
+    }
+}
+
+public struct HachiClusterSealWorkPacket: Sendable, Codable, Equatable {
+    public let operation: HachiClusterSealOperation
+    public let maskedWitnessPolynomial: MultilinearPoly
+    public let maskedRowPolynomials: [MultilinearPoly]
+    public let blindingWitnessPolynomial: MultilinearPoly
+    public let blindingRowPolynomials: [MultilinearPoly]
+    public let maskedQueries: [SpartanPCSQuery<Fq>]
+    public let blindingQueries: [SpartanPCSQuery<Fq>]
+    public let pcsBatchSeedDigest: [UInt8]
+    public let blindingBatchSeedDigest: [UInt8]
+
+    public init(
+        operation: HachiClusterSealOperation,
+        maskedWitnessPolynomial: MultilinearPoly,
+        maskedRowPolynomials: [MultilinearPoly],
+        blindingWitnessPolynomial: MultilinearPoly,
+        blindingRowPolynomials: [MultilinearPoly],
+        maskedQueries: [SpartanPCSQuery<Fq>] = [],
+        blindingQueries: [SpartanPCSQuery<Fq>] = [],
+        pcsBatchSeedDigest: [UInt8] = [],
+        blindingBatchSeedDigest: [UInt8] = []
+    ) {
+        self.operation = operation
+        self.maskedWitnessPolynomial = maskedWitnessPolynomial
+        self.maskedRowPolynomials = maskedRowPolynomials
+        self.blindingWitnessPolynomial = blindingWitnessPolynomial
+        self.blindingRowPolynomials = blindingRowPolynomials
+        self.maskedQueries = maskedQueries
+        self.blindingQueries = blindingQueries
+        self.pcsBatchSeedDigest = pcsBatchSeedDigest
+        self.blindingBatchSeedDigest = blindingBatchSeedDigest
     }
 
-    public func serialize() -> Data {
-        var writer = BinaryWriter()
-        writer.append(Self.magic)
-        writer.appendLengthPrefixed(Data(sealBackendID.utf8))
-        writer.appendLengthPrefixed(sealParamDigest)
-        writer.appendLengthPrefixed(statementDigest)
-        writer.appendLengthPrefixed(scheduleDigest)
-        writer.appendLengthPrefixed(witnessCommitmentRoot)
-        return writer.data
+    public func serialize() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(self)
     }
 
     public static func deserialize(_ data: Data) throws -> HachiClusterSealWorkPacket {
-        var reader = BinaryReader(data)
-        guard try reader.readData(count: magic.count) == magic else {
+        let decoder = JSONDecoder()
+        do {
+            return try decoder.decode(Self.self, from: data)
+        } catch {
             throw ClusterWorkPacketError.invalidFormat
         }
-        let backendData = try reader.readLengthPrefixedData()
-        guard let sealBackendID = String(data: backendData, encoding: .utf8) else {
-            throw ClusterWorkPacketError.invalidFormat
+    }
+
+    public func execute(metalContext: MetalContext? = nil) throws -> HachiClusterSealWorkResult {
+        let backend = HachiPCSBackend()
+        switch operation {
+        case .commit:
+            let witnessCommitment = try backend.commit(
+                label: .witness(),
+                polynomial: maskedWitnessPolynomial,
+                context: metalContext,
+                traceCollector: nil
+            )
+            let matrixEvaluationCommitments = try maskedRowPolynomials.enumerated().map { index, polynomial in
+                try backend.commit(
+                    label: .matrixRow(index),
+                    polynomial: polynomial,
+                    context: metalContext,
+                    traceCollector: nil
+                )
+            }
+            let blindingWitnessCommitment = try backend.commit(
+                label: .witness(),
+                polynomial: blindingWitnessPolynomial,
+                context: metalContext,
+                traceCollector: nil
+            )
+            let blindingRowCommitments = try blindingRowPolynomials.enumerated().map { index, polynomial in
+                try backend.commit(
+                    label: .matrixRow(index),
+                    polynomial: polynomial,
+                    context: metalContext,
+                    traceCollector: nil
+                )
+            }
+            return HachiClusterSealWorkResult(
+                operation: .commit,
+                commitments: HachiClusterSealCommitments(
+                    witnessCommitment: witnessCommitment,
+                    matrixEvaluationCommitments: matrixEvaluationCommitments,
+                    blindingCommitments: SpartanBlindingCommitments(
+                        witness: blindingWitnessCommitment,
+                        matrixRows: blindingRowCommitments
+                    )
+                ),
+                openings: nil
+            )
+        case .open:
+            let pcsOpeningProof = try backend.openBatch(
+                polynomials: maskedPolynomialsByOracle,
+                queries: maskedQueries,
+                batchSeedDigest: pcsBatchSeedDigest,
+                context: metalContext,
+                traceCollector: nil
+            )
+            let blindingOpeningProof = try backend.openBatch(
+                polynomials: blindingPolynomialsByOracle,
+                queries: blindingQueries,
+                batchSeedDigest: blindingBatchSeedDigest,
+                context: metalContext,
+                traceCollector: nil
+            )
+            return HachiClusterSealWorkResult(
+                operation: .open,
+                commitments: nil,
+                openings: HachiClusterSealOpenings(
+                    pcsOpeningProof: pcsOpeningProof,
+                    blindingOpeningProof: blindingOpeningProof
+                )
+            )
         }
-        let sealParamDigest = try reader.readLengthPrefixedData()
-        let statementDigest = try reader.readLengthPrefixedBytes()
-        let scheduleDigest = try reader.readLengthPrefixedBytes()
-        let witnessCommitmentRoot = try reader.readLengthPrefixedBytes()
-        guard reader.isAtEnd else { throw ClusterWorkPacketError.invalidFormat }
-        return HachiClusterSealWorkPacket(
-            sealBackendID: sealBackendID,
-            sealParamDigest: Array(sealParamDigest),
-            statementDigest: statementDigest,
-            scheduleDigest: scheduleDigest,
-            witnessCommitmentRoot: witnessCommitmentRoot
+    }
+
+    private var maskedPolynomialsByOracle: [SpartanOracleID: MultilinearPoly] {
+        Dictionary(
+            uniqueKeysWithValues:
+                [(.witness(), maskedWitnessPolynomial)]
+                + maskedRowPolynomials.enumerated().map { (.matrixRow($0.offset), $0.element) }
         )
     }
 
-    public func execute() -> HachiClusterSealWorkResult {
-        HachiClusterSealWorkResult(
-            sealBackendID: sealBackendID,
-            sealParamDigest: sealParamDigest,
-            statementDigest: Data(statementDigest),
-            scheduleDigest: Data(scheduleDigest),
-            witnessCommitmentRoot: Data(witnessCommitmentRoot),
-            executionDigest: Data(
-                NuSecurityDigest.sha256(
-                    sealParamDigest
-                        + Data(statementDigest)
-                        + Data(scheduleDigest)
-                        + Data(witnessCommitmentRoot)
-                )
-            )
+    private var blindingPolynomialsByOracle: [SpartanOracleID: MultilinearPoly] {
+        Dictionary(
+            uniqueKeysWithValues:
+                [(.witness(), blindingWitnessPolynomial)]
+                + blindingRowPolynomials.enumerated().map { (.matrixRow($0.offset), $0.element) }
         )
     }
 }
 
-public struct HachiClusterSealWorkResult: Sendable {
-    public let sealBackendID: String
-    public let sealParamDigest: Data
-    public let statementDigest: Data
-    public let scheduleDigest: Data
-    public let witnessCommitmentRoot: Data
-    public let executionDigest: Data
+public struct HachiClusterSealWorkResult: Sendable, Codable, Equatable {
+    public let operation: HachiClusterSealOperation
+    public let commitments: HachiClusterSealCommitments?
+    public let openings: HachiClusterSealOpenings?
 
-    public func serialize() -> Data {
-        var writer = BinaryWriter()
-        writer.appendLengthPrefixed(Data(sealBackendID.utf8))
-        writer.appendLengthPrefixed(sealParamDigest)
-        writer.appendLengthPrefixed(statementDigest)
-        writer.appendLengthPrefixed(scheduleDigest)
-        writer.appendLengthPrefixed(witnessCommitmentRoot)
-        writer.appendLengthPrefixed(executionDigest)
-        return writer.data
+    public init(
+        operation: HachiClusterSealOperation,
+        commitments: HachiClusterSealCommitments?,
+        openings: HachiClusterSealOpenings?
+    ) {
+        self.operation = operation
+        self.commitments = commitments
+        self.openings = openings
+    }
+
+    public func serialize() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(self)
     }
 
     public static func deserialize(_ data: Data) throws -> HachiClusterSealWorkResult {
-        var reader = BinaryReader(data)
-        let backendData = try reader.readLengthPrefixedData()
-        guard let sealBackendID = String(data: backendData, encoding: .utf8) else {
+        let decoder = JSONDecoder()
+        do {
+            return try decoder.decode(Self.self, from: data)
+        } catch {
             throw ClusterWorkPacketError.invalidFormat
         }
-        let sealParamDigest = try reader.readLengthPrefixedData()
-        let statementDigest = try reader.readLengthPrefixedData()
-        let scheduleDigest = try reader.readLengthPrefixedData()
-        let witnessCommitmentRoot = try reader.readLengthPrefixedData()
-        let executionDigest = try reader.readLengthPrefixedData()
-        guard reader.isAtEnd else { throw ClusterWorkPacketError.invalidFormat }
-        return HachiClusterSealWorkResult(
-            sealBackendID: sealBackendID,
-            sealParamDigest: sealParamDigest,
-            statementDigest: statementDigest,
-            scheduleDigest: scheduleDigest,
-            witnessCommitmentRoot: witnessCommitmentRoot,
-            executionDigest: executionDigest
-        )
     }
 
     public func isValid(for packet: HachiClusterSealWorkPacket) -> Bool {
-        guard sealBackendID == packet.sealBackendID,
-              sealParamDigest == packet.sealParamDigest,
-              statementDigest == Data(packet.statementDigest),
-              scheduleDigest == Data(packet.scheduleDigest),
-              witnessCommitmentRoot == Data(packet.witnessCommitmentRoot) else {
+        guard let expected = try? packet.execute() else {
             return false
         }
-        let expected = NuSecurityDigest.sha256(
-            packet.sealParamDigest
-                + Data(packet.statementDigest)
-                + Data(packet.scheduleDigest)
-                + Data(packet.witnessCommitmentRoot)
-        )
-        return executionDigest == expected
+        return expected == self
     }
 }
 
@@ -591,7 +663,7 @@ public extension ClusterWorkExecutor {
             },
             seal: { payload, _ in
                 let packet = try HachiClusterSealWorkPacket.deserialize(payload)
-                return packet.execute().serialize()
+                return try packet.execute(metalContext: metalContext).serialize()
             },
             decompose: { payload, _ in
                 let packet = try ClusterDecomposeWorkPacket.deserialize(payload)

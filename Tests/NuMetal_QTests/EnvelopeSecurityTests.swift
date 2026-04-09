@@ -140,6 +140,58 @@ final class EnvelopeSecurityTests: XCTestCase {
         XCTAssertEqual(verification.reason, .invalidTimestamp)
     }
 
+    func testSealRequiresAttestationForStandardPolicyExport() async throws {
+        let engine = try await AcceptanceSupport.makeEngine()
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "SealAttestationRequired")
+        let context = await engine.createContext(
+            compiledShape: compiledShape,
+            policy: .standard,
+            appID: "NuMetalQ.Tests.AttestationRequired"
+        )
+        let handle = try await context.seed(
+            witness: AcceptanceSupport.makeWitness(seed: 17),
+            publicInputs: [Fq(8), Fq(13)]
+        )
+
+        do {
+            _ = try await context.seal(
+                handle,
+                sessionKey: AcceptanceSupport.makeSessionKey(),
+                signerKeyID: Data("test-signer".utf8),
+                signEnvelope: AcceptanceSupport.signer
+            )
+            XCTFail("Expected export attestation policy to be enforced")
+        } catch let error as ProofContextError {
+            guard case let .policyViolation(violation) = error else {
+                return XCTFail("Unexpected proof context error: \(error)")
+            }
+            XCTAssertEqual(violation.kind, .attestationRequired)
+        }
+    }
+
+    func testEnvelopeBuilderCanonicalizesEmptyAttestationForSignatureRoundTrip() throws {
+        let builder = EnvelopeBuilder(
+            profileID: NuProfile.canonical.profileID,
+            appID: "NuMetalQ.Tests",
+            teamID: "NuMetalQ",
+            privacyMode: .fullZK,
+            signerKeyID: Data("test-signer".utf8),
+            sealParamDigest: Data(NuParams.derive(from: .canonical).seal.parameterDigest)
+        )
+        let envelope = try builder.build(
+            proof: makeMinimalPublicSealProof(instanceCount: 1),
+            sign: AcceptanceSupport.signer,
+            attestation: Data()
+        )
+        let decoded = try ProofEnvelope.deserialize(envelope.serialize())
+
+        XCTAssertNil(envelope.attestation)
+        XCTAssertNil(decoded.attestation)
+        XCTAssertTrue(try decoded.isSignatureValid { message, signature, _ in
+            try AcceptanceSupport.verifier(message, signature)
+        })
+    }
+
     func testConstrainedRelationRejectsInvalidWitnessBinding() async throws {
         let engine = try await AcceptanceSupport.makeEngine()
         let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "SeedConstraint")

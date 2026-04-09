@@ -44,7 +44,22 @@ internal struct HachiPCSBackend {
             label: "numeq.decider.hachi.batch.seed",
             count: 32
         )
+        return try openBatch(
+            polynomials: polynomials,
+            queries: queries,
+            batchSeedDigest: batchSeedDigest,
+            context: context,
+            traceCollector: traceCollector
+        )
+    }
 
+    func openBatch(
+        polynomials: [SpartanOracleID: MultilinearPoly],
+        queries: [SpartanPCSQuery<Fq>],
+        batchSeedDigest: [UInt8],
+        context: MetalContext? = nil,
+        traceCollector: MetalTraceCollector? = nil
+    ) throws -> HachiPCSBatchOpeningProof {
         let artifacts = try Dictionary(
             uniqueKeysWithValues: polynomials.map { oracle, polynomial in
                 (

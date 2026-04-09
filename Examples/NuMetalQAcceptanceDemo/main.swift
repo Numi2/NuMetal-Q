@@ -290,8 +290,7 @@ struct NuMetalQAcceptanceDemo {
             compiledShape: compiledShape,
             verifySignature: signer.verifyEnvelope,
             attestationVerifier: demoAttestationVerifier,
-            requireAttestation: true,
-            sessionKey: sessionKey
+            requireAttestation: true
         )
         try require(verification.isValid, "SDK envelope verification failed")
 
@@ -419,8 +418,7 @@ struct NuMetalQAcceptanceDemo {
             compiledShape: compiledShape,
             verifySignature: signer.verifyEnvelope,
             attestationVerifier: demoAttestationVerifier,
-            requireAttestation: true,
-            sessionKey: sessionKey
+            requireAttestation: true
         )
         try require(clusterVerification.isValid, "Cluster seal verification failed")
 

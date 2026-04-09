@@ -3,10 +3,8 @@ import XCTest
 @testable import NuMetal_Q
 
 final class ClusterWorkPacketTests: XCTestCase {
-    func testHachiSealWorkPacketDeserializeRejectsInvalidMagic() throws {
-        let packet = makeSealPacket()
-        var encoded = packet.serialize()
-        encoded[0] ^= 0x01
+    func testHachiSealWorkPacketDeserializeRejectsInvalidPayload() throws {
+        let encoded = Data("not-json".utf8)
 
         XCTAssertThrowsError(try HachiClusterSealWorkPacket.deserialize(encoded))
     }
@@ -185,7 +183,69 @@ final class ClusterWorkPacketTests: XCTestCase {
         XCTAssertFalse(tampered.isValid(for: packet))
     }
 
-    func testHachiSealWorkPacketExecutesThroughClusterExecutor() async throws {
+    func testHachiSealCommitPacketExecutesThroughClusterExecutor() async throws {
+        let (principal, coProver) = try await makePairedClusterSessions()
+        let packet = makeSealCommitPacket()
+        let decodedPacket = try HachiClusterSealWorkPacket.deserialize(try packet.serialize())
+        XCTAssertEqual(decodedPacket, packet)
+
+        let fragment = try await principal.createSealFragment(
+            shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 5, count: 32)),
+            vaultEncryptedWorkPackage: try packet.serialize(),
+            attestation: Data("cluster-attestation".utf8)
+        )
+        let result = try await coProver.processFragment(fragment)
+        let returned = try await principal.receiveResult(result)
+        let sealResult = try HachiClusterSealWorkResult.deserialize(returned)
+
+        XCTAssertTrue(sealResult.isValid(for: packet))
+        XCTAssertEqual(sealResult.operation, .commit)
+        XCTAssertNotNil(sealResult.commitments)
+        XCTAssertNil(sealResult.openings)
+    }
+
+    func testHachiSealOpenPacketExecutesThroughClusterExecutor() async throws {
+        let (principal, coProver) = try await makePairedClusterSessions()
+        let packet = makeSealOpenPacket()
+        let decodedPacket = try HachiClusterSealWorkPacket.deserialize(try packet.serialize())
+        XCTAssertEqual(decodedPacket, packet)
+
+        let fragment = try await principal.createSealFragment(
+            shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 6, count: 32)),
+            vaultEncryptedWorkPackage: try packet.serialize(),
+            attestation: Data("cluster-attestation".utf8)
+        )
+        let result = try await coProver.processFragment(fragment)
+        let returned = try await principal.receiveResult(result)
+        let sealResult = try HachiClusterSealWorkResult.deserialize(returned)
+
+        XCTAssertTrue(sealResult.isValid(for: packet))
+        XCTAssertEqual(sealResult.operation, .open)
+        XCTAssertNil(sealResult.commitments)
+        XCTAssertNotNil(sealResult.openings)
+    }
+
+    func testHachiSealWorkResultRejectsTamperedCommitments() throws {
+        let packet = makeSealCommitPacket()
+        let valid = try packet.execute()
+        guard let commitments = valid.commitments else {
+            return XCTFail("Expected commit result")
+        }
+
+        let tampered = HachiClusterSealWorkResult(
+            operation: .commit,
+            commitments: HachiClusterSealCommitments(
+                witnessCommitment: tampered(commitment: commitments.witnessCommitment),
+                matrixEvaluationCommitments: commitments.matrixEvaluationCommitments,
+                blindingCommitments: commitments.blindingCommitments
+            ),
+            openings: nil
+        )
+
+        XCTAssertFalse(tampered.isValid(for: packet))
+    }
+
+    private func makePairedClusterSessions() async throws -> (principal: ClusterSession, coProver: ClusterSession) {
         let principal = ClusterSession(
             role: .principal,
             fragmentSigner: AcceptanceSupport.signer,
@@ -204,53 +264,78 @@ final class ClusterWorkPacketTests: XCTestCase {
         let coProverID = await coProver.deviceID
         try await principal.pair(peerDeviceID: coProverID, sharedSecret: AcceptanceSupport.sharedSecret)
         try await coProver.pair(peerDeviceID: principalID, sharedSecret: AcceptanceSupport.sharedSecret)
-
-        let packet = makeSealPacket()
-        let decodedPacket = try HachiClusterSealWorkPacket.deserialize(packet.serialize())
-        XCTAssertEqual(decodedPacket.sealBackendID, packet.sealBackendID)
-        XCTAssertEqual(decodedPacket.sealParamDigest, packet.sealParamDigest)
-        XCTAssertEqual(decodedPacket.scheduleDigest, packet.scheduleDigest)
-
-        let fragment = try await principal.createSealFragment(
-            shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 5, count: 32)),
-            vaultEncryptedWorkPackage: packet.serialize(),
-            attestation: Data("cluster-attestation".utf8)
-        )
-        let result = try await coProver.processFragment(fragment)
-        let returned = try await principal.receiveResult(result)
-        let sealResult = try HachiClusterSealWorkResult.deserialize(returned)
-
-        XCTAssertTrue(sealResult.isValid(for: packet))
-        XCTAssertEqual(sealResult.statementDigest, Data(packet.statementDigest))
-        XCTAssertEqual(sealResult.scheduleDigest, Data(packet.scheduleDigest))
-        XCTAssertEqual(sealResult.witnessCommitmentRoot, Data(packet.witnessCommitmentRoot))
+        return (principal, coProver)
     }
 
-    func testHachiSealWorkResultRejectsTamperedExecutionDigest() {
-        let packet = makeSealPacket()
-        let valid = packet.execute()
-        var tamperedDigest = valid.executionDigest
-        tamperedDigest[0] ^= 0x01
-
-        let tampered = HachiClusterSealWorkResult(
-            sealBackendID: valid.sealBackendID,
-            sealParamDigest: valid.sealParamDigest,
-            statementDigest: valid.statementDigest,
-            scheduleDigest: valid.scheduleDigest,
-            witnessCommitmentRoot: valid.witnessCommitmentRoot,
-            executionDigest: tamperedDigest
-        )
-
-        XCTAssertFalse(tampered.isValid(for: packet))
-    }
-
-    private func makeSealPacket() -> HachiClusterSealWorkPacket {
+    private func makeSealCommitPacket() -> HachiClusterSealWorkPacket {
         HachiClusterSealWorkPacket(
-            sealBackendID: NuSealConstants.productionBackendID,
-            sealParamDigest: [UInt8](repeating: 0x21, count: 32),
-            statementDigest: [UInt8](repeating: 0x32, count: 32),
-            scheduleDigest: [UInt8](repeating: 0x43, count: 32),
-            witnessCommitmentRoot: [UInt8](repeating: 0x54, count: 32)
+            operation: .commit,
+            maskedWitnessPolynomial: MultilinearPoly(
+                numVars: 1,
+                evals: [Fq(3), Fq(5)]
+            ),
+            maskedRowPolynomials: [
+                MultilinearPoly(numVars: 1, evals: [Fq(7), Fq(11)])
+            ],
+            blindingWitnessPolynomial: MultilinearPoly(
+                numVars: 1,
+                evals: [Fq(13), Fq(17)]
+            ),
+            blindingRowPolynomials: [
+                MultilinearPoly(numVars: 1, evals: [Fq(19), Fq(23)])
+            ]
+        )
+    }
+
+    private func makeSealOpenPacket() -> HachiClusterSealWorkPacket {
+        HachiClusterSealWorkPacket(
+            operation: .open,
+            maskedWitnessPolynomial: MultilinearPoly(
+                numVars: 1,
+                evals: [Fq(3), Fq(5)]
+            ),
+            maskedRowPolynomials: [
+                MultilinearPoly(numVars: 1, evals: [Fq(7), Fq(11)])
+            ],
+            blindingWitnessPolynomial: MultilinearPoly(
+                numVars: 1,
+                evals: [Fq(13), Fq(17)]
+            ),
+            blindingRowPolynomials: [
+                MultilinearPoly(numVars: 1, evals: [Fq(19), Fq(23)])
+            ],
+            maskedQueries: [
+                SpartanPCSQuery(oracle: .witness(), point: [Fq(29)], value: .zero),
+                SpartanPCSQuery(oracle: .matrixRow(0), point: [Fq(31)], value: .zero)
+            ],
+            blindingQueries: [
+                SpartanPCSQuery(oracle: .witness(), point: [Fq(29)], value: .zero),
+                SpartanPCSQuery(oracle: .matrixRow(0), point: [Fq(31)], value: .zero)
+            ],
+            pcsBatchSeedDigest: [UInt8](repeating: 0xAA, count: 32),
+            blindingBatchSeedDigest: [UInt8](repeating: 0xBB, count: 32)
+        )
+    }
+
+    private func tampered(commitment: HachiPCSCommitment) -> HachiPCSCommitment {
+        var tableDigest = commitment.tableDigest
+        if tableDigest.isEmpty {
+            tableDigest = [0x01]
+        } else {
+            tableDigest[0] ^= 0x01
+        }
+        return HachiPCSCommitment(
+            oracle: commitment.oracle,
+            mode: commitment.mode,
+            tableCommitment: commitment.tableCommitment,
+            directPackedOuterCommitments: commitment.directPackedOuterCommitments,
+            tableDigest: tableDigest,
+            merkleRoot: commitment.merkleRoot,
+            parameterDigest: commitment.parameterDigest,
+            valueCount: commitment.valueCount,
+            codewordLength: commitment.codewordLength,
+            packedChunkCount: commitment.packedChunkCount,
+            statementDigest: commitment.statementDigest
         )
     }
 }

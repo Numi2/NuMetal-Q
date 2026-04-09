@@ -194,7 +194,6 @@ enum NuMetalQBenchmarks {
                         verifySignature: envelopeVerifier,
                         attestationVerifier: attestationVerifier,
                         requireAttestation: true,
-                        sessionKey: sessionKey,
                         executionMode: .cpuOnly,
                         traceCollector: nil
                     )
@@ -258,7 +257,6 @@ enum NuMetalQBenchmarks {
                             verifySignature: envelopeVerifier,
                             attestationVerifier: attestationVerifier,
                             requireAttestation: true,
-                            sessionKey: sessionKey,
                             executionMode: .metalAssisted,
                             traceCollector: traceCollector
                         )

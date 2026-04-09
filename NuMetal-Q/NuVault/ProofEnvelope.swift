@@ -45,6 +45,9 @@ public struct ProofEnvelope: Sendable {
         guard version == Self.currentVersion else {
             throw ProofEnvelopeValidationError.unsupportedVersion(version)
         }
+        guard privacyMode == .fullZK else {
+            throw ProofEnvelopeValidationError.unsupportedPrivacyMode(privacyMode)
+        }
         guard sealBackendID == NuSealConstants.productionBackendID else {
             throw ProofEnvelopeValidationError.invalidSealBackend
         }
@@ -80,7 +83,7 @@ public struct ProofEnvelope: Sendable {
         writer.appendLengthPrefixed(proofBytes)
         writer.appendLengthPrefixed(signerKeyID)
         writer.appendLengthPrefixed(signature)
-        writer.appendLengthPrefixed(attestation ?? Data())
+        writer.appendLengthPrefixed(canonicalAttestation ?? Data())
         writer.append(timestamp.timeIntervalSince1970)
         return writer.data
     }
@@ -144,12 +147,18 @@ public struct ProofEnvelope: Sendable {
         writer.appendLengthPrefixed(signerKeyID)
 
         if includeAttestation {
-            writer.append(UInt8(attestation == nil ? 0 : 1))
-            writer.appendLengthPrefixed(attestation ?? Data())
+            writer.appendLengthPrefixed(canonicalAttestation ?? Data())
         }
 
         writer.append(timestamp.timeIntervalSince1970)
         return writer.data
+    }
+
+    private var canonicalAttestation: Data? {
+        guard let attestation, attestation.isEmpty == false else {
+            return nil
+        }
+        return attestation
     }
 
     private static func decodeString(from reader: inout BinaryReader) throws -> String {
@@ -163,6 +172,7 @@ public struct ProofEnvelope: Sendable {
 
 enum ProofEnvelopeValidationError: Error, Sendable {
     case unsupportedVersion(UInt16)
+    case unsupportedPrivacyMode(PrivacyMode)
     case invalidSealBackend
     case missingSignerKeyID
     case missingTeamID
@@ -206,6 +216,7 @@ public struct EnvelopeBuilder: Sendable {
         let proofBytes = try SealProofCodec.serialize(proof)
         let headerDigest = NuSecurityDigest.sha256(proof.statement.publicHeader)
 
+        let canonicalAttestation = attestation?.isEmpty == false ? attestation : nil
         let unsigned = ProofEnvelope(
             version: ProofEnvelope.currentVersion,
             profileID: profileID,
@@ -220,7 +231,7 @@ public struct EnvelopeBuilder: Sendable {
             proofBytes: proofBytes,
             signerKeyID: signerKeyID,
             signature: Data(),
-            attestation: attestation,
+            attestation: canonicalAttestation,
             timestamp: Date()
         )
 
@@ -238,7 +249,7 @@ public struct EnvelopeBuilder: Sendable {
             proofBytes: proofBytes,
             signerKeyID: signerKeyID,
             signature: try sign(unsigned.signingPayload()),
-            attestation: attestation,
+            attestation: canonicalAttestation,
             timestamp: unsigned.timestamp
         )
     }

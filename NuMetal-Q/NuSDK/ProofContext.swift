@@ -190,6 +190,7 @@ public actor ProofContext {
             throw ProofContextError.handleNotFound
         }
         try await prepareStateForSealing(state)
+        try requireExportEligibility(attestation: attestation)
 
         let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
 
@@ -244,6 +245,7 @@ public actor ProofContext {
             throw ProofContextError.handleNotFound
         }
         try await prepareStateForSealing(state)
+        try requireExportEligibility(attestation: attestation)
 
         let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
         let sealProof = try await sealBackend.seal(
@@ -300,6 +302,7 @@ public actor ProofContext {
             throw ProofContextError.handleNotFound
         }
         try await prepareStateForSealing(state)
+        try requireExportEligibility(attestation: attestation)
         try requireClusterEligibility(for: state, attestation: attestation)
 
         let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
@@ -357,6 +360,7 @@ public actor ProofContext {
             throw ProofContextError.handleNotFound
         }
         try await prepareStateForSealing(state)
+        try requireExportEligibility(attestation: attestation)
         try requireClusterEligibility(for: state, attestation: attestation)
 
         let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
@@ -507,8 +511,7 @@ public actor ProofContext {
     public func verify(
         envelope: ProofEnvelope,
         verifySignature: PQKeyedVerifyClosure,
-        requireAttestation: Bool = false,
-        sessionKey: SymmetricKey? = nil
+        requireAttestation: Bool = false
     ) async throws -> VerificationResult {
         do {
             try envelope.validateCryptographicFormat()
@@ -557,8 +560,6 @@ public actor ProofContext {
             return VerificationResult(isValid: false, reason: .attestationInvalid)
         }
 
-        _ = sessionKey
-
         let proof: PublicSealProof
         do {
             proof = try envelope.proof()
@@ -586,16 +587,14 @@ public actor ProofContext {
     public func verify(
         envelope: ProofEnvelope,
         verifySignature: PQVerifyClosure,
-        requireAttestation: Bool = false,
-        sessionKey: SymmetricKey? = nil
+        requireAttestation: Bool = false
     ) async throws -> VerificationResult {
         try await verify(
             envelope: envelope,
             verifySignature: { message, signature, _ in
                 try verifySignature(message, signature)
             },
-            requireAttestation: requireAttestation,
-            sessionKey: sessionKey
+            requireAttestation: requireAttestation
         )
     }
 
@@ -683,6 +682,13 @@ public actor ProofContext {
                     message: "ephemeralDerived witness material cannot be persisted"
                 )
             )
+        }
+    }
+
+    private func requireExportEligibility(attestation: Data?) throws {
+        let laneIDs = compiledShape.shape.lanes.map(\.name)
+        if let violation = policy.validateForSync(laneIDs: laneIDs, attestation: attestation) {
+            throw ProofContextError.policyViolation(violation)
         }
     }
 
@@ -844,7 +850,6 @@ public enum VerificationFailure: Sendable, Equatable {
     case attestationRequired
     case attestationVerifierMissing
     case attestationInvalid
-    case decryptionFailed
     case proofInvalid
 }
 
@@ -856,7 +861,11 @@ func verificationFailure(for error: ProofEnvelopeValidationError) -> Verificatio
         return .signerIdentityMissing
     case .invalidTimestamp:
         return .invalidTimestamp
-    case .invalidSealBackend, .missingTeamID, .invalidPublicHeaderDigest, .missingProofBytes:
+    case .unsupportedPrivacyMode,
+            .invalidSealBackend,
+            .missingTeamID,
+            .invalidPublicHeaderDigest,
+            .missingProofBytes:
         return .proofInvalid
     }
 }

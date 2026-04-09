@@ -33,21 +33,11 @@ public actor HachiSealEngine: NuSealCompiler {
             throw SpartanSealError.serializationFailure
         }
 
-        let statement = PublicSealStatement(
-            backendID: backendID,
-            sealTranscriptID: NuSealConstants.sealTranscriptID,
-            shapeDigest: shape.digest,
-            deciderLayoutDigest: digest(
-                Array(ShapeArtifact.sealCompilationBundle(for: shape)),
-                domain: "NuMeQ.Decider.Layout"
-            ),
-            sealParamDigest: parameterBundle.parameterDigest,
+        let statement = makeStatement(
+            accumulator: accumulator,
+            shape: shape,
             publicHeader: publicHeader,
-            instanceCount: state.statementCount,
-            finalAccumulatorCommitment: accumulator.currentCommitment,
-            publicInputs: accumulator.currentClaim.publicInputs,
-            relaxationFactor: accumulator.currentClaim.relaxationFactor,
-            errorTerms: accumulator.currentClaim.errorTerms
+            instanceCount: state.statementCount
         )
 
         let terminalProof = try await buildTerminalProof(
@@ -69,29 +59,60 @@ public actor HachiSealEngine: NuSealCompiler {
         attestation: Data,
         dispatchFragment: @Sendable (JobFragment) async throws -> FragmentResult
     ) async throws -> PublicSealProof {
-        let proof = try await seal(
-            state: state,
+        guard state.kind == .recursiveAccumulator,
+              let accumulator = state.recursiveAccumulator else {
+            throw SpartanSealError.serializationFailure
+        }
+
+        let statement = makeStatement(
+            accumulator: accumulator,
             shape: shape,
-            publicHeader: publicHeader
+            publicHeader: publicHeader,
+            instanceCount: state.statementCount
         )
-        let packet = HachiClusterSealWorkPacket(
-            sealBackendID: backendID,
-            sealParamDigest: proof.statement.sealParamDigest,
-            statementDigest: SealProofCodec.statementDigest(for: proof.statement),
-            scheduleDigest: batchScheduleDigest(for: proof.terminalProof.pcsOpeningProof),
-            witnessCommitmentRoot: proof.terminalProof.witnessCommitment.tableDigest
+        let terminalProof = try await buildTerminalProofUsingCluster(
+            accumulator: accumulator,
+            shape: shape,
+            statement: statement,
+            clusterSession: clusterSession,
+            attestation: attestation,
+            dispatchFragment: dispatchFragment
         )
-        let fragment = try await clusterSession.createSealFragment(
-            shapeDigest: shape.digest,
-            vaultEncryptedWorkPackage: packet.serialize(),
-            attestation: attestation
-        )
-        let response = try await clusterSession.roundTrip(fragment, dispatch: dispatchFragment)
-        let result = try HachiClusterSealWorkResult.deserialize(response)
-        guard result.isValid(for: packet) else {
+        let proof = PublicSealProof(statement: statement, terminalProof: terminalProof)
+        guard await verify(
+            proof: proof,
+            shape: shape,
+            publicHeader: publicHeader,
+            executionMode: .automatic,
+            traceCollector: nil
+        ) else {
             throw SpartanSealError.invalidClusterSealResult(.witness())
         }
         return proof
+    }
+
+    private func makeStatement(
+        accumulator: FoldAccumulator,
+        shape: Shape,
+        publicHeader: Data,
+        instanceCount: UInt32
+    ) -> PublicSealStatement {
+        PublicSealStatement(
+            backendID: backendID,
+            sealTranscriptID: NuSealConstants.sealTranscriptID,
+            shapeDigest: shape.digest,
+            deciderLayoutDigest: digest(
+                Array(ShapeArtifact.sealCompilationBundle(for: shape)),
+                domain: "NuMeQ.Decider.Layout"
+            ),
+            sealParamDigest: parameterBundle.parameterDigest,
+            publicHeader: publicHeader,
+            instanceCount: instanceCount,
+            finalAccumulatorCommitment: accumulator.currentCommitment,
+            publicInputs: accumulator.currentClaim.publicInputs,
+            relaxationFactor: accumulator.currentClaim.relaxationFactor,
+            errorTerms: accumulator.currentClaim.errorTerms
+        )
     }
 
     public func verify(
@@ -289,6 +310,181 @@ private extension HachiSealEngine {
         executionMode: VerificationExecutionMode,
         traceCollector: MetalTraceCollector?
     ) async throws -> HachiTerminalProof {
+        let prepared = try prepareTerminalPolynomials(
+            accumulator: accumulator,
+            shape: shape,
+            statement: statement
+        )
+        let activeMetalContext = metalContext(for: executionMode)
+        let maskedWitnessCommitment = try pcsBackend.commit(
+            label: .witness(),
+            polynomial: prepared.maskedWitnessPolynomial,
+            context: activeMetalContext,
+            traceCollector: traceCollector
+        )
+        let maskedRowCommitments = try prepared.maskedRowPolynomials.enumerated().map { index, polynomial in
+            try pcsBackend.commit(
+                label: .matrixRow(index),
+                polynomial: polynomial,
+                context: activeMetalContext,
+                traceCollector: traceCollector
+            )
+        }
+        let blindingWitnessCommitment = try pcsBackend.commit(
+            label: .witness(),
+            polynomial: prepared.blindingWitnessPolynomial,
+            context: activeMetalContext,
+            traceCollector: traceCollector
+        )
+        let blindingRowCommitments = try prepared.blindingRowPolynomials.enumerated().map { index, polynomial in
+            try pcsBackend.commit(
+                label: .matrixRow(index),
+                polynomial: polynomial,
+                context: activeMetalContext,
+                traceCollector: traceCollector
+            )
+        }
+        let blindingCommitments = SpartanBlindingCommitments(
+            witness: blindingWitnessCommitment,
+            matrixRows: blindingRowCommitments
+        )
+        let evaluated = try evaluateTerminalProofState(
+            shape: shape,
+            statement: statement,
+            prepared: prepared,
+            witnessCommitment: maskedWitnessCommitment,
+            matrixEvaluationCommitments: maskedRowCommitments,
+            blindingCommitments: blindingCommitments
+        )
+        let pcsOpeningProof = try pcsBackend.openBatch(
+            polynomials: prepared.maskedPolynomialsByOracle,
+            queries: evaluated.maskedQueries,
+            batchSeedDigest: evaluated.pcsBatchSeedDigest,
+            context: activeMetalContext,
+            traceCollector: traceCollector
+        )
+        let blindingOpeningProof = try pcsBackend.openBatch(
+            polynomials: prepared.blindingPolynomialsByOracle,
+            queries: evaluated.blindingQueries,
+            batchSeedDigest: evaluated.blindingBatchSeedDigest,
+            context: activeMetalContext,
+            traceCollector: traceCollector
+        )
+
+        return HachiTerminalProof(
+            witnessCommitment: maskedWitnessCommitment,
+            matrixEvaluationCommitments: maskedRowCommitments,
+            blindingCommitments: blindingCommitments,
+            outerSumcheck: evaluated.outerSumcheck,
+            innerSumcheck: evaluated.innerSumcheck,
+            claimedEvaluations: evaluated.claimedEvaluations,
+            blindingEvaluations: evaluated.blindingEvaluations,
+            pcsOpeningProof: pcsOpeningProof,
+            blindingOpeningProof: blindingOpeningProof
+        )
+    }
+
+    func buildTerminalProofUsingCluster(
+        accumulator: FoldAccumulator,
+        shape: Shape,
+        statement: PublicSealStatement,
+        clusterSession: ClusterSession,
+        attestation: Data,
+        dispatchFragment: @Sendable (JobFragment) async throws -> FragmentResult
+    ) async throws -> HachiTerminalProof {
+        let prepared = try prepareTerminalPolynomials(
+            accumulator: accumulator,
+            shape: shape,
+            statement: statement
+        )
+        let commitPacket = HachiClusterSealWorkPacket(
+            operation: .commit,
+            maskedWitnessPolynomial: prepared.maskedWitnessPolynomial,
+            maskedRowPolynomials: prepared.maskedRowPolynomials,
+            blindingWitnessPolynomial: prepared.blindingWitnessPolynomial,
+            blindingRowPolynomials: prepared.blindingRowPolynomials
+        )
+        let commitResult = try await performClusterSealWork(
+            packet: commitPacket,
+            shapeDigest: shape.digest,
+            clusterSession: clusterSession,
+            attestation: attestation,
+            dispatchFragment: dispatchFragment
+        )
+        guard commitResult.operation == .commit,
+              let commitments = commitResult.commitments else {
+            throw SpartanSealError.invalidClusterSealResult(.witness())
+        }
+
+        let evaluated = try evaluateTerminalProofState(
+            shape: shape,
+            statement: statement,
+            prepared: prepared,
+            witnessCommitment: commitments.witnessCommitment,
+            matrixEvaluationCommitments: commitments.matrixEvaluationCommitments,
+            blindingCommitments: commitments.blindingCommitments
+        )
+        let openPacket = HachiClusterSealWorkPacket(
+            operation: .open,
+            maskedWitnessPolynomial: prepared.maskedWitnessPolynomial,
+            maskedRowPolynomials: prepared.maskedRowPolynomials,
+            blindingWitnessPolynomial: prepared.blindingWitnessPolynomial,
+            blindingRowPolynomials: prepared.blindingRowPolynomials,
+            maskedQueries: evaluated.maskedQueries,
+            blindingQueries: evaluated.blindingQueries,
+            pcsBatchSeedDigest: evaluated.pcsBatchSeedDigest,
+            blindingBatchSeedDigest: evaluated.blindingBatchSeedDigest
+        )
+        let openResult = try await performClusterSealWork(
+            packet: openPacket,
+            shapeDigest: shape.digest,
+            clusterSession: clusterSession,
+            attestation: attestation,
+            dispatchFragment: dispatchFragment
+        )
+        guard openResult.operation == .open,
+              let openings = openResult.openings else {
+            throw SpartanSealError.invalidClusterSealResult(.witness())
+        }
+
+        return HachiTerminalProof(
+            witnessCommitment: commitments.witnessCommitment,
+            matrixEvaluationCommitments: commitments.matrixEvaluationCommitments,
+            blindingCommitments: commitments.blindingCommitments,
+            outerSumcheck: evaluated.outerSumcheck,
+            innerSumcheck: evaluated.innerSumcheck,
+            claimedEvaluations: evaluated.claimedEvaluations,
+            blindingEvaluations: evaluated.blindingEvaluations,
+            pcsOpeningProof: openings.pcsOpeningProof,
+            blindingOpeningProof: openings.blindingOpeningProof
+        )
+    }
+
+    func performClusterSealWork(
+        packet: HachiClusterSealWorkPacket,
+        shapeDigest: ShapeDigest,
+        clusterSession: ClusterSession,
+        attestation: Data,
+        dispatchFragment: @Sendable (JobFragment) async throws -> FragmentResult
+    ) async throws -> HachiClusterSealWorkResult {
+        let fragment = try await clusterSession.createSealFragment(
+            shapeDigest: shapeDigest,
+            vaultEncryptedWorkPackage: try packet.serialize(),
+            attestation: attestation
+        )
+        let response = try await clusterSession.roundTrip(fragment, dispatch: dispatchFragment)
+        let result = try HachiClusterSealWorkResult.deserialize(response)
+        guard result.isValid(for: packet) else {
+            throw SpartanSealError.invalidClusterSealResult(.witness())
+        }
+        return result
+    }
+
+    func prepareTerminalPolynomials(
+        accumulator: FoldAccumulator,
+        shape: Shape,
+        statement: PublicSealStatement
+    ) throws -> PreparedTerminalPolynomials {
         let canonicalWitness = try accumulator.currentWitness()
         let witnessFields = WitnessPacking.unpackFieldVector(
             from: canonicalWitness,
@@ -310,52 +506,43 @@ private extension HachiSealEngine {
             for: .witness(),
             randomness: randomness[.witness()] ?? randomBytes(count: 32)
         )
-        let rowBlinds = try rowPolynomials.enumerated().map { index, polynomial in
-            try shape.blindPolynomial(
+
+        var maskedRowPolynomials = [MultilinearPoly]()
+        maskedRowPolynomials.reserveCapacity(rowPolynomials.count)
+        var blindingRowPolynomials = [MultilinearPoly]()
+        blindingRowPolynomials.reserveCapacity(rowPolynomials.count)
+        for (index, polynomial) in rowPolynomials.enumerated() {
+            let blinded = try shape.blindPolynomial(
                 polynomial,
                 for: .matrixRow(index),
                 randomness: randomness[.matrixRow(index)] ?? randomBytes(count: 32)
             )
+            maskedRowPolynomials.append(blinded.blinded)
+            blindingRowPolynomials.append(blinded.blinding)
         }
 
-        let activeMetalContext = metalContext(for: executionMode)
-        let maskedWitnessCommitment = try pcsBackend.commit(
-            label: .witness(),
-            polynomial: witnessBlind.blinded,
-            context: activeMetalContext,
-            traceCollector: traceCollector
+        return PreparedTerminalPolynomials(
+            witnessPolynomial: witnessPolynomial,
+            rowPolynomials: rowPolynomials,
+            maskedWitnessPolynomial: witnessBlind.blinded,
+            maskedRowPolynomials: maskedRowPolynomials,
+            blindingWitnessPolynomial: witnessBlind.blinding,
+            blindingRowPolynomials: blindingRowPolynomials
         )
-        let maskedRowCommitments = try rowBlinds.enumerated().map { index, polynomial in
-            try pcsBackend.commit(
-                label: .matrixRow(index),
-                polynomial: polynomial.blinded,
-                context: activeMetalContext,
-                traceCollector: traceCollector
-            )
-        }
-        let blindingWitnessCommitment = try pcsBackend.commit(
-            label: .witness(),
-            polynomial: witnessBlind.blinding,
-            context: activeMetalContext,
-            traceCollector: traceCollector
-        )
-        let blindingRowCommitments = try rowBlinds.enumerated().map { index, polynomial in
-            try pcsBackend.commit(
-                label: .matrixRow(index),
-                polynomial: polynomial.blinding,
-                context: activeMetalContext,
-                traceCollector: traceCollector
-            )
-        }
+    }
 
+    func evaluateTerminalProofState(
+        shape: Shape,
+        statement: PublicSealStatement,
+        prepared: PreparedTerminalPolynomials,
+        witnessCommitment: HachiPCSCommitment,
+        matrixEvaluationCommitments: [HachiPCSCommitment],
+        blindingCommitments: SpartanBlindingCommitments<HachiPCSCommitment>
+    ) throws -> EvaluatedTerminalProofState {
         var transcript = makeTranscript(for: statement)
-        let blindingCommitments = SpartanBlindingCommitments(
-            witness: blindingWitnessCommitment,
-            matrixRows: blindingRowCommitments
-        )
         let placeholder = HachiTerminalProof(
-            witnessCommitment: maskedWitnessCommitment,
-            matrixEvaluationCommitments: maskedRowCommitments,
+            witnessCommitment: witnessCommitment,
+            matrixEvaluationCommitments: matrixEvaluationCommitments,
             blindingCommitments: blindingCommitments,
             outerSumcheck: SpartanSumcheckProof(roundEvaluations: []),
             innerSumcheck: SpartanSumcheckProof(roundEvaluations: []),
@@ -383,11 +570,12 @@ private extension HachiSealEngine {
             transcript: &transcript,
             label: "numeq.decider.spartan.outer"
         ) { point in
-            let evaluations = try rowPolynomials.map { try shape.evaluate($0, at: point) }
-            return self.eqWeight(challenge: tau, point: point) * (try shape.rowConstraint(rowEvaluations: evaluations))
+            let evaluations = try prepared.rowPolynomials.map { try shape.evaluate($0, at: point) }
+            return self.eqWeight(challenge: tau, point: point)
+                * (try shape.rowConstraint(rowEvaluations: evaluations))
         }
 
-        let rowValues = try rowPolynomials.map { try shape.evaluate($0, at: outer.finalPoint) }
+        let rowValues = try prepared.rowPolynomials.map { try shape.evaluate($0, at: outer.finalPoint) }
         let gamma = transcript.challengeScalar(label: "numeq.decider.spartan.inner.gamma")
         let innerClaim = try combinedInnerClaim(
             shape: shape,
@@ -403,7 +591,7 @@ private extension HachiSealEngine {
             transcript: &transcript,
             label: "numeq.decider.spartan.inner"
         ) { point in
-            let witnessValue = try shape.evaluate(witnessPolynomial, at: point)
+            let witnessValue = try shape.evaluate(prepared.witnessPolynomial, at: point)
             let matrixValue = try self.combinedMatrixValue(
                 shape: shape,
                 rowPoint: outer.finalPoint,
@@ -413,9 +601,14 @@ private extension HachiSealEngine {
             return witnessValue * matrixValue
         }
 
-        let witnessEvaluation = try shape.evaluate(witnessPolynomial, at: inner.finalPoint)
-        let blindingWitnessEvaluation = try shape.evaluate(witnessBlind.blinding, at: inner.finalPoint)
-        let blindingRowEvaluations = try rowBlinds.map { try shape.evaluate($0.blinding, at: outer.finalPoint) }
+        let witnessEvaluation = try shape.evaluate(prepared.witnessPolynomial, at: inner.finalPoint)
+        let blindingWitnessEvaluation = try shape.evaluate(
+            prepared.blindingWitnessPolynomial,
+            at: inner.finalPoint
+        )
+        let blindingRowEvaluations = try prepared.blindingRowPolynomials.map {
+            try shape.evaluate($0, at: outer.finalPoint)
+        }
         let maskedQueries = maskedQueries(
             rowPoint: outer.finalPoint,
             columnPoint: inner.finalPoint,
@@ -430,33 +623,16 @@ private extension HachiSealEngine {
             blindingRowEvaluations: blindingRowEvaluations,
             blindingWitnessEvaluation: blindingWitnessEvaluation
         )
-        let pcsOpeningProof = try pcsBackend.openBatch(
-            polynomials: Dictionary(
-                uniqueKeysWithValues:
-                    [(.witness(), witnessBlind.blinded)]
-                    + rowBlinds.enumerated().map { (.matrixRow($0.offset), $0.element.blinded) }
-            ),
-            queries: maskedQueries,
-            transcript: &transcript,
-            context: activeMetalContext,
-            traceCollector: traceCollector
+        let pcsBatchSeedDigest = transcript.challengeBytes(
+            label: "numeq.decider.hachi.batch.seed",
+            count: 32
         )
-        let blindingOpeningProof = try pcsBackend.openBatch(
-            polynomials: Dictionary(
-                uniqueKeysWithValues:
-                    [(.witness(), witnessBlind.blinding)]
-                    + rowBlinds.enumerated().map { (.matrixRow($0.offset), $0.element.blinding) }
-            ),
-            queries: blindingQueries,
-            transcript: &transcript,
-            context: activeMetalContext,
-            traceCollector: traceCollector
+        let blindingBatchSeedDigest = transcript.challengeBytes(
+            label: "numeq.decider.hachi.batch.seed",
+            count: 32
         )
 
-        return HachiTerminalProof(
-            witnessCommitment: maskedWitnessCommitment,
-            matrixEvaluationCommitments: maskedRowCommitments,
-            blindingCommitments: blindingCommitments,
+        return EvaluatedTerminalProofState(
             outerSumcheck: outer.proof,
             innerSumcheck: inner.proof,
             claimedEvaluations: SpartanClaimedEvaluations(
@@ -469,8 +645,10 @@ private extension HachiSealEngine {
                 matrixRows: blindingRowEvaluations,
                 witness: blindingWitnessEvaluation
             ),
-            pcsOpeningProof: pcsOpeningProof,
-            blindingOpeningProof: blindingOpeningProof
+            maskedQueries: maskedQueries,
+            blindingQueries: blindingQueries,
+            pcsBatchSeedDigest: pcsBatchSeedDigest,
+            blindingBatchSeedDigest: blindingBatchSeedDigest
         )
     }
 
@@ -830,6 +1008,42 @@ private extension HachiSealEngine {
             return nil
         }
     }
+}
+
+private struct PreparedTerminalPolynomials {
+    let witnessPolynomial: MultilinearPoly
+    let rowPolynomials: [MultilinearPoly]
+    let maskedWitnessPolynomial: MultilinearPoly
+    let maskedRowPolynomials: [MultilinearPoly]
+    let blindingWitnessPolynomial: MultilinearPoly
+    let blindingRowPolynomials: [MultilinearPoly]
+
+    var maskedPolynomialsByOracle: [SpartanOracleID: MultilinearPoly] {
+        Dictionary(
+            uniqueKeysWithValues:
+                [(.witness(), maskedWitnessPolynomial)]
+                + maskedRowPolynomials.enumerated().map { (.matrixRow($0.offset), $0.element) }
+        )
+    }
+
+    var blindingPolynomialsByOracle: [SpartanOracleID: MultilinearPoly] {
+        Dictionary(
+            uniqueKeysWithValues:
+                [(.witness(), blindingWitnessPolynomial)]
+                + blindingRowPolynomials.enumerated().map { (.matrixRow($0.offset), $0.element) }
+        )
+    }
+}
+
+private struct EvaluatedTerminalProofState {
+    let outerSumcheck: SpartanSumcheckProof
+    let innerSumcheck: SpartanSumcheckProof
+    let claimedEvaluations: SpartanClaimedEvaluations<Fq>
+    let blindingEvaluations: SpartanBlindingEvaluations<Fq>
+    let maskedQueries: [SpartanPCSQuery<Fq>]
+    let blindingQueries: [SpartanPCSQuery<Fq>]
+    let pcsBatchSeedDigest: [UInt8]
+    let blindingBatchSeedDigest: [UInt8]
 }
 
 private extension HachiTerminalProof {

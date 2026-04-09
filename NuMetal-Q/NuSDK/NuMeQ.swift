@@ -88,8 +88,7 @@ public actor NuMeQ {
         compiledShape: CompiledShape,
         verifySignature: PQKeyedVerifyClosure,
         attestationVerifier: AttestationVerifier? = nil,
-        requireAttestation: Bool = false,
-        sessionKey: SymmetricKey? = nil
+        requireAttestation: Bool = false
     ) async throws -> VerificationResult {
         try await verify(
             envelope: envelope,
@@ -97,7 +96,6 @@ public actor NuMeQ {
             verifySignature: verifySignature,
             attestationVerifier: attestationVerifier,
             requireAttestation: requireAttestation,
-            sessionKey: sessionKey,
             executionMode: .automatic,
             traceCollector: nil
         )
@@ -109,7 +107,6 @@ public actor NuMeQ {
         verifySignature: PQKeyedVerifyClosure,
         attestationVerifier: AttestationVerifier? = nil,
         requireAttestation: Bool = false,
-        sessionKey: SymmetricKey? = nil,
         executionMode: VerificationExecutionMode,
         traceCollector: MetalTraceCollector?
     ) async throws -> VerificationResult {
@@ -169,8 +166,6 @@ public actor NuMeQ {
             }
         }
 
-        _ = sessionKey
-
         let proof: PublicSealProof
         do {
             proof = try envelope.proof()
@@ -202,8 +197,7 @@ public actor NuMeQ {
         compiledShape: CompiledShape,
         verifySignature: PQVerifyClosure,
         attestationVerifier: AttestationVerifier? = nil,
-        requireAttestation: Bool = false,
-        sessionKey: SymmetricKey? = nil
+        requireAttestation: Bool = false
     ) async throws -> VerificationResult {
         try await verify(
             envelope: envelope,
@@ -212,8 +206,7 @@ public actor NuMeQ {
                 try verifySignature(message, signature)
             },
             attestationVerifier: attestationVerifier,
-            requireAttestation: requireAttestation,
-            sessionKey: sessionKey
+            requireAttestation: requireAttestation
         )
     }
 
