@@ -563,6 +563,13 @@ public actor ProofContext {
         } catch {
             return VerificationResult(isValid: false, reason: .proofInvalid)
         }
+        guard publicStatementMatchesHeader(
+            publicHeader: envelope.publicHeaderBytes,
+            publicInputs: proof.statement.publicInputs,
+            shape: compiledShape.shape
+        ) else {
+            return VerificationResult(isValid: false, reason: .proofInvalid)
+        }
         guard await sealBackend.verify(
             proof: proof,
             shape: compiledShape.shape,
@@ -587,34 +594,6 @@ public actor ProofContext {
             },
             requireAttestation: requireAttestation,
             sessionKey: sessionKey
-        )
-    }
-
-    @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
-    public func verify(
-        envelope: ProofEnvelope,
-        verifySignature: PQKeyedVerifyClosure,
-        requireAttestation: Bool = false,
-        artifactPrivateKey: MLKEM1024.PrivateKey
-    ) async throws -> VerificationResult {
-        try await verify(
-            envelope: envelope,
-            verifySignature: verifySignature,
-            requireAttestation: requireAttestation
-        )
-    }
-
-    @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
-    public func verify(
-        envelope: ProofEnvelope,
-        verifySignature: PQKeyedVerifyClosure,
-        requireAttestation: Bool = false,
-        artifactPrivateKey: SecureEnclave.MLKEM1024.PrivateKey
-    ) async throws -> VerificationResult {
-        try await verify(
-            envelope: envelope,
-            verifySignature: verifySignature,
-            requireAttestation: requireAttestation
         )
     }
 
@@ -676,12 +655,11 @@ public actor ProofContext {
         }
 
         let expectedWitnessCount = compiledShape.shape.relation.n - compiledShape.shape.relation.nPublic
-        let packedWitnessCount =
-            WitnessPacking.packWitnessToRings(lanes: witness.lanes).count * RingElement.degree
-        guard packedWitnessCount == expectedWitnessCount else {
+        let actualWitnessCount = witness.totalElements
+        guard actualWitnessCount == expectedWitnessCount else {
             throw ProofContextError.invalidWitnessElementCount(
                 expected: expectedWitnessCount,
-                actual: packedWitnessCount
+                actual: actualWitnessCount
             )
         }
 
@@ -692,32 +670,6 @@ public actor ProofContext {
                 actual: publicInputs.count
             )
         }
-    }
-
-    private func decodePublicInputs(from publicHeader: Data) throws -> [Fq] {
-        guard publicHeader.count == compiledShape.shape.publicHeaderSize,
-              publicHeader.count.isMultiple(of: MemoryLayout<UInt64>.size) else {
-            throw ProofContextError.invalidPublicInputCount(
-                expected: compiledShape.shape.relation.nPublic,
-                actual: publicHeader.count / MemoryLayout<UInt64>.size
-            )
-        }
-
-        let publicInputs = stride(
-            from: 0,
-            to: publicHeader.count,
-            by: MemoryLayout<UInt64>.size
-        ).compactMap { offset -> Fq? in
-            Fq.fromBytes(Array(publicHeader[offset..<offset + MemoryLayout<UInt64>.size]))
-        }
-
-        guard publicInputs.count == compiledShape.shape.relation.nPublic else {
-            throw ProofContextError.invalidPublicInputCount(
-                expected: compiledShape.shape.relation.nPublic,
-                actual: publicInputs.count
-            )
-        }
-        return publicInputs
     }
 
     private func requirePersistenceEligibility(for state: FoldState) throws {
@@ -883,6 +835,7 @@ public enum VerificationFailure: Sendable, Equatable {
     case signatureInvalid
     case signerIdentityMissing
     case unsupportedEnvelopeVersion
+    case invalidTimestamp
     case shapeMismatch
     case profileMismatch
     case backendMismatch
@@ -900,7 +853,7 @@ func verificationFailure(for error: ProofEnvelopeValidationError) -> Verificatio
     case .missingSignerKeyID:
         return .signerIdentityMissing
     case .invalidTimestamp:
-        return .decryptionFailed
+        return .invalidTimestamp
     case .invalidSealBackend, .missingTeamID, .invalidPublicHeaderDigest, .missingProofBytes:
         return .proofInvalid
     }

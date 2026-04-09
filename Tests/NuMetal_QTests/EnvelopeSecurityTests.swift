@@ -2,6 +2,19 @@ import XCTest
 @testable import NuMetal_Q
 
 final class EnvelopeSecurityTests: XCTestCase {
+    func testPublicStatementBindingRejectsMismatchedHeaderEncoding() throws {
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "HeaderBindingMismatch")
+        let mismatchedHeader = Data([1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0])
+
+        XCTAssertFalse(
+            publicStatementMatchesHeader(
+                publicHeader: mismatchedHeader,
+                publicInputs: [Fq(1), Fq(3)],
+                shape: compiledShape.shape
+            )
+        )
+    }
+
     func testVerificationRequiresAttestationWhenRequested() async throws {
         let engine = try await AcceptanceSupport.makeEngine()
         let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "AttestationRequired")
@@ -61,6 +74,24 @@ final class EnvelopeSecurityTests: XCTestCase {
 
         XCTAssertFalse(verification.isValid)
         XCTAssertEqual(verification.reason, .proofInvalid)
+    }
+
+    func testVerificationMapsInvalidTimestampSeparately() async throws {
+        let engine = try await AcceptanceSupport.makeEngine()
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "InvalidTimestamp")
+        let envelope = try AcceptanceSupport.makeSyntheticEnvelope(
+            compiledShape: compiledShape,
+            timestamp: Date(timeIntervalSince1970: .infinity)
+        )
+
+        let verification = try await engine.verify(
+            envelope: envelope,
+            compiledShape: compiledShape,
+            verifySignature: AcceptanceSupport.verifier
+        )
+
+        XCTAssertFalse(verification.isValid)
+        XCTAssertEqual(verification.reason, .invalidTimestamp)
     }
 
     func testConstrainedRelationRejectsInvalidWitnessBinding() async throws {

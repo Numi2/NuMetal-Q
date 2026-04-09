@@ -177,6 +177,13 @@ public actor NuMeQ {
         } catch {
             return VerificationResult(isValid: false, reason: .proofInvalid)
         }
+        guard publicStatementMatchesHeader(
+            publicHeader: envelope.publicHeaderBytes,
+            publicInputs: proof.statement.publicInputs,
+            shape: compiledShape.shape
+        ) else {
+            return VerificationResult(isValid: false, reason: .proofInvalid)
+        }
         guard await sealBackend.verify(
             proof: proof,
             shape: compiledShape.shape,
@@ -207,42 +214,6 @@ public actor NuMeQ {
             attestationVerifier: attestationVerifier,
             requireAttestation: requireAttestation,
             sessionKey: sessionKey
-        )
-    }
-
-    @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
-    public func verify(
-        envelope: ProofEnvelope,
-        compiledShape: CompiledShape,
-        verifySignature: PQKeyedVerifyClosure,
-        attestationVerifier: AttestationVerifier? = nil,
-        requireAttestation: Bool = false,
-        artifactPrivateKey: MLKEM1024.PrivateKey
-    ) async throws -> VerificationResult {
-        try await verify(
-            envelope: envelope,
-            compiledShape: compiledShape,
-            verifySignature: verifySignature,
-            attestationVerifier: attestationVerifier,
-            requireAttestation: requireAttestation
-        )
-    }
-
-    @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
-    public func verify(
-        envelope: ProofEnvelope,
-        compiledShape: CompiledShape,
-        verifySignature: PQKeyedVerifyClosure,
-        attestationVerifier: AttestationVerifier? = nil,
-        requireAttestation: Bool = false,
-        artifactPrivateKey: SecureEnclave.MLKEM1024.PrivateKey
-    ) async throws -> VerificationResult {
-        try await verify(
-            envelope: envelope,
-            compiledShape: compiledShape,
-            verifySignature: verifySignature,
-            attestationVerifier: attestationVerifier,
-            requireAttestation: requireAttestation
         )
     }
 
