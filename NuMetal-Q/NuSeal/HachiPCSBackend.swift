@@ -5,6 +5,7 @@ import Metal
 internal struct HachiPCSBackend {
     let parameterBundle: HachiSealParameterBundle
     let codewordBlowup: Int
+    private let directPackedChunkCounts: Set<Int> = [1, 2, 4]
 
     init(
         parameterBundle: HachiSealParameterBundle = NuParams.derive(from: .canonical).seal,
@@ -12,6 +13,10 @@ internal struct HachiPCSBackend {
     ) {
         self.parameterBundle = parameterBundle
         self.codewordBlowup = codewordBlowup
+    }
+
+    private var directPackedParameters: DirectPackedPoKParameters {
+        parameterBundle.directPackedPoK
     }
 
     func commit(
@@ -84,6 +89,25 @@ internal struct HachiPCSBackend {
                     evaluation.toBytes(),
                     domain: "NuMeQ.Decider.Hachi.Eval"
                 )
+                if artifact.commitment.mode == .directPacked {
+                    guard let material = artifact.directPackedWitnessMaterial else {
+                        throw SpartanSealError.serializationFailure
+                    }
+                    return HachiPCSOpening(
+                        oracle: query.oracle,
+                        evaluation: evaluation,
+                        scheduleDigest: scheduleDigest,
+                        evaluationDigest: evaluationDigest,
+                        directPacked: try makeDirectPackedOpening(
+                            material: material,
+                            commitment: artifact.commitment,
+                            point: query.point,
+                            evaluation: evaluation,
+                            context: context
+                        )
+                    )
+                }
+
                 let codewordIndex = queryIndex(
                     point: query.point,
                     oracle: query.oracle,
@@ -94,9 +118,11 @@ internal struct HachiPCSBackend {
                     evaluation: evaluation,
                     scheduleDigest: scheduleDigest,
                     evaluationDigest: evaluationDigest,
-                    codewordIndex: UInt32(codewordIndex),
-                    codewordValue: artifact.codeword[codewordIndex],
-                    merkleAuthenticationPath: artifact.authenticationPath(for: codewordIndex)
+                    general: HachiGeneralPCSOpeningProof(
+                        codewordIndex: UInt32(codewordIndex),
+                        codewordValue: artifact.codeword[codewordIndex],
+                        merkleAuthenticationPath: artifact.authenticationPath(for: codewordIndex)
+                    )
                 )
             }
             return HachiPCSBatchClassOpeningProof(
@@ -228,29 +254,54 @@ internal struct HachiPCSBackend {
                     return false
                 }
 
-                let expectedIndex = queryIndex(
-                    point: classProof.point,
-                    oracle: opening.oracle,
-                    codewordLength: Int(commitment.codewordLength)
-                )
-                guard Int(opening.codewordIndex) == expectedIndex else {
-                    diagnostics.recordArtifactDiff(
+                let expectsDirectMode = commitment.mode == .directPacked
+                if expectsDirectMode {
+                    guard opening.mode == .directPacked else {
+                        diagnostics.recordFailure("expected direct-packed opening for \(pointKey(opening.oracle))")
+                        return false
+                    }
+                    guard verifyDirectPackedOpening(
+                        opening: opening,
+                        commitment: commitment,
+                        point: classProof.point,
+                        context: context,
+                        diagnostics: &diagnostics
+                    ) else {
+                        return false
+                    }
+                } else {
+                    guard opening.mode == .general else {
+                        diagnostics.recordFailure("expected general hachi opening for \(pointKey(opening.oracle))")
+                        return false
+                    }
+                    let expectedIndex = queryIndex(
+                        point: classProof.point,
                         oracle: opening.oracle,
-                        component: "codewordIndex",
-                        detail: "expected \(expectedIndex), got \(opening.codewordIndex)"
+                        codewordLength: Int(commitment.codewordLength)
                     )
-                    return false
-                }
-                guard verifyAuthenticationPath(
-                    opening: opening,
-                    commitment: commitment
-                ) else {
-                    diagnostics.recordArtifactDiff(
-                        oracle: opening.oracle,
-                        component: "merkleRoot",
-                        detail: "authentication path does not reconstruct commitment root"
-                    )
-                    return false
+                    guard let general = opening.general else {
+                        diagnostics.recordFailure("missing general hachi opening payload for \(pointKey(opening.oracle))")
+                        return false
+                    }
+                    guard Int(general.codewordIndex) == expectedIndex else {
+                        diagnostics.recordArtifactDiff(
+                            oracle: opening.oracle,
+                            component: "codewordIndex",
+                            detail: "expected \(expectedIndex), got \(general.codewordIndex)"
+                        )
+                        return false
+                    }
+                    guard verifyAuthenticationPath(
+                        opening: general,
+                        commitment: commitment
+                    ) else {
+                        diagnostics.recordArtifactDiff(
+                            oracle: opening.oracle,
+                            component: "merkleRoot",
+                            detail: "authentication path does not reconstruct commitment root"
+                        )
+                        return false
+                    }
                 }
             }
         }
@@ -287,6 +338,15 @@ internal struct HachiPCSBackend {
         context: MetalContext?,
         traceCollector: MetalTraceCollector?
     ) throws -> HachiPCSOracleArtifact {
+        let packed = WitnessPacking.packFieldVectorToRings(polynomial.evals)
+        if usesDirectPackedOpening(forPackedChunkCount: packed.count) {
+            return try buildDirectPackedOracleArtifact(
+                label: label,
+                packedWitness: packed,
+                valueCount: polynomial.evals.count,
+                context: context
+            )
+        }
         if let context {
             return try buildOracleArtifactMetal(
                 label: label,
@@ -308,7 +368,6 @@ internal struct HachiPCSBackend {
             traceCollector: traceCollector,
             label: label
         )
-        let packed = WitnessPacking.packFieldVectorToRings(polynomial.evals)
         let key = AjtaiKey.expand(
             seed: parameterBundle.seed,
             slotCount: max(1, packed.count)
@@ -322,15 +381,58 @@ internal struct HachiPCSBackend {
         return HachiPCSOracleArtifact(
             commitment: HachiPCSCommitment(
                 oracle: label,
+                mode: .general,
                 tableCommitment: tableCommitment,
                 tableDigest: tableDigest,
                 merkleRoot: merkleLevels.last?.first ?? digest([], domain: "NuMeQ.Decider.Hachi.Empty"),
                 parameterDigest: parameterBundle.parameterDigest,
                 valueCount: UInt32(clamping: polynomial.evals.count),
-                codewordLength: UInt32(clamping: codeword.count)
+                codewordLength: UInt32(clamping: codeword.count),
+                packedChunkCount: UInt32(clamping: packed.count),
+                statementDigest: []
             ),
             codeword: codeword,
-            merkleLevels: merkleLevels
+            merkleLevels: merkleLevels,
+            directPackedWitnessMaterial: nil
+        )
+    }
+
+    private func buildDirectPackedOracleArtifact(
+        label: SpartanOracleID,
+        packedWitness: [RingElement],
+        valueCount: Int,
+        context: MetalContext?
+    ) throws -> HachiPCSOracleArtifact {
+        let material = try buildDirectPackedWitnessMaterial(
+            packedWitness: packedWitness,
+            context: context
+        )
+        let statementDigest = directPackedStatementDigest(
+            packedChunkCount: packedWitness.count,
+            valueCount: valueCount
+        )
+        let aggregateOuterCommitment = AjtaiCommitment(
+            value: material.chunks.reduce(RingElement.zero) { partial, chunk in
+                partial + chunk.outerCommitment.value
+            }
+        )
+        return HachiPCSOracleArtifact(
+            commitment: HachiPCSCommitment(
+                oracle: label,
+                mode: .directPacked,
+                tableCommitment: aggregateOuterCommitment,
+                directPackedOuterCommitments: material.chunks.map(\.outerCommitment),
+                tableDigest: statementDigest,
+                merkleRoot: [],
+                parameterDigest: parameterBundle.parameterDigest,
+                valueCount: UInt32(clamping: valueCount),
+                codewordLength: 0,
+                packedChunkCount: UInt32(clamping: packedWitness.count),
+                statementDigest: statementDigest
+            ),
+            codeword: [],
+            merkleLevels: [],
+            directPackedWitnessMaterial: material
         )
     }
 
@@ -340,6 +442,15 @@ internal struct HachiPCSBackend {
         context: MetalContext,
         traceCollector: MetalTraceCollector?
     ) throws -> HachiPCSOracleArtifact {
+        let packed = WitnessPacking.packFieldVectorToRings(polynomial.evals)
+        if usesDirectPackedOpening(forPackedChunkCount: packed.count) {
+            return try buildDirectPackedOracleArtifact(
+                label: label,
+                packedWitness: packed,
+                valueCount: polynomial.evals.count,
+                context: context
+            )
+        }
         let base = polynomial.evals.isEmpty ? [Fq.zero] : polynomial.evals
         let codewordLength = max(1, base.count * codewordBlowup)
 
@@ -473,7 +584,6 @@ internal struct HachiPCSBackend {
             merkleLevels.append(currentLevel)
         }
 
-        let packed = WitnessPacking.packFieldVectorToRings(polynomial.evals)
         let key = AjtaiKey.expand(
             seed: parameterBundle.seed,
             slotCount: max(1, packed.count)
@@ -487,15 +597,19 @@ internal struct HachiPCSBackend {
         return HachiPCSOracleArtifact(
             commitment: HachiPCSCommitment(
                 oracle: label,
+                mode: .general,
                 tableCommitment: tableCommitment,
                 tableDigest: tableDigest,
                 merkleRoot: merkleLevels.last?.first ?? digest([], domain: "NuMeQ.Decider.Hachi.Empty"),
                 parameterDigest: parameterBundle.parameterDigest,
                 valueCount: UInt32(clamping: polynomial.evals.count),
-                codewordLength: UInt32(clamping: codeword.count)
+                codewordLength: UInt32(clamping: codeword.count),
+                packedChunkCount: UInt32(clamping: packed.count),
+                statementDigest: []
             ),
             codeword: codeword,
-            merkleLevels: merkleLevels
+            merkleLevels: merkleLevels,
+            directPackedWitnessMaterial: nil
         )
     }
 
@@ -712,6 +826,273 @@ internal struct HachiPCSBackend {
         "seal.verify.oracle[\(pointKey(oracle))]"
     }
 
+    private func usesDirectPackedOpening(forPackedChunkCount packedChunkCount: Int) -> Bool {
+        directPackedChunkCounts.contains(packedChunkCount)
+    }
+
+    private func makeDirectPackedOpening(
+        material: DirectPackedWitnessMaterial,
+        commitment: HachiPCSCommitment,
+        point: [Fq],
+        evaluation: Fq,
+        context: MetalContext?
+    ) throws -> HachiDirectPackedOpeningProof {
+        let statement = try makeDirectPackedStatement(
+            commitment: commitment,
+            point: point,
+            evaluation: evaluation
+        )
+        let proof = try ShortLinearWitnessPoK.prove(
+            statement: statement,
+            witness: material,
+            context: context
+        )
+        return HachiDirectPackedOpeningProof(
+            packedChunkCount: commitment.packedChunkCount,
+            relationProof: proof
+        )
+    }
+
+    private func verifyDirectPackedOpening(
+        opening: HachiPCSOpening,
+        commitment: HachiPCSCommitment,
+        point: [Fq],
+        context: MetalContext?,
+        diagnostics: inout HachiVerificationDiagnostics
+    ) -> Bool {
+        guard let directPacked = opening.directPacked else {
+            diagnostics.recordFailure("missing direct-packed opening payload for \(pointKey(opening.oracle))")
+            return false
+        }
+        guard commitment.mode == .directPacked else {
+            diagnostics.recordArtifactDiff(
+                oracle: opening.oracle,
+                component: "commitmentMode",
+                detail: "expected direct-packed commitment mode"
+            )
+            return false
+        }
+        guard directPacked.packedChunkCount == commitment.packedChunkCount else {
+            diagnostics.recordArtifactDiff(
+                oracle: opening.oracle,
+                component: "packedChunkCount",
+                detail: "expected \(commitment.packedChunkCount), got \(directPacked.packedChunkCount)"
+            )
+            return false
+        }
+        guard commitment.statementDigest == directPackedStatementDigest(
+            packedChunkCount: Int(commitment.packedChunkCount),
+            valueCount: Int(commitment.valueCount)
+        ) else {
+            diagnostics.recordArtifactDiff(
+                oracle: opening.oracle,
+                component: "statementDigest",
+                detail: "invalid direct-packed statement digest"
+            )
+            return false
+        }
+
+        do {
+            let statement = try makeDirectPackedStatement(
+                commitment: commitment,
+                point: point,
+                evaluation: opening.evaluation
+            )
+            guard try ShortLinearWitnessPoK.verify(
+                statement: statement,
+                proof: directPacked.relationProof,
+                context: context
+            ) else {
+                diagnostics.recordArtifactDiff(
+                    oracle: opening.oracle,
+                    component: "relationProof",
+                    detail: "direct-packed short linear witness proof rejected"
+                )
+                return false
+            }
+            return true
+        } catch {
+            diagnostics.recordArtifactDiff(
+                oracle: opening.oracle,
+                component: "relationProof",
+                detail: "verification failed with error: \(error)"
+            )
+            return false
+        }
+    }
+
+    private func directPackedBindingKey(slotCount: Int) -> AjtaiKey {
+        AjtaiKey.expand(
+            seed: directPackedParameters.witnessBindingSeed,
+            slotCount: max(1, slotCount)
+        )
+    }
+
+    private func directPackedRelationKey(slotCount: Int) -> AjtaiKey {
+        AjtaiKey.expand(
+            seed: directPackedParameters.relationSeed,
+            slotCount: max(1, slotCount)
+        )
+    }
+
+    private func directPackedOuterKey(slotCount: Int) -> AjtaiKey {
+        AjtaiKey.expand(
+            seed: directPackedParameters.outerSeed,
+            slotCount: max(1, slotCount)
+        )
+    }
+
+    private func directPackedBindingImageKey(slotCount: Int) -> AjtaiKey {
+        AjtaiKey.expand(
+            seed: directPackedParameters.bindingImageSeed,
+            slotCount: max(1, slotCount)
+        )
+    }
+
+    private func directPackedRelationImageKey(slotCount: Int) -> AjtaiKey {
+        AjtaiKey.expand(
+            seed: directPackedParameters.relationImageSeed,
+            slotCount: max(1, slotCount)
+        )
+    }
+
+    private func directPackedEvaluationImageKey() -> AjtaiKey {
+        AjtaiKey.expand(
+            seed: directPackedParameters.evaluationImageSeed,
+            slotCount: 1
+        )
+    }
+
+    private func directPackedOuterImageKey(slotCount: Int) -> AjtaiKey {
+        AjtaiKey.expand(
+            seed: directPackedParameters.outerImageSeed,
+            slotCount: max(1, slotCount)
+        )
+    }
+
+    func makePackedEqLinearFunctional(
+        point: [Fq],
+        ell: Int,
+        packedChunkCount: Int,
+        valueCount: Int
+    ) -> [[Fq]] {
+        precondition(point.count == ell)
+        precondition(packedChunkCount >= 1)
+        let evaluationCount = 1 << ell
+        precondition(valueCount == evaluationCount)
+
+        let weights = multilinearEqWeights(point: point)
+        return (0..<packedChunkCount).map { chunkIndex in
+            (0..<RingElement.degree).map { coeffIndex in
+                let flatIndex = chunkIndex * RingElement.degree + coeffIndex
+                return flatIndex < weights.count ? weights[flatIndex] : .zero
+            }
+        }
+    }
+
+    private func multilinearEqWeights(point: [Fq]) -> [Fq] {
+        let evaluationCount = 1 << point.count
+        return (0..<evaluationCount).map { index in
+            point.enumerated().reduce(Fq.one) { partial, entry in
+                let bit = (index >> entry.offset) & 1
+                return partial * (bit == 0 ? (Fq.one - entry.element) : entry.element)
+            }
+        }
+    }
+
+    private func buildDirectPackedWitnessMaterial(
+        packedWitness: [RingElement],
+        context: MetalContext?
+    ) throws -> DirectPackedWitnessMaterial {
+        return try ShortLinearWitnessPoK.buildWitnessMaterial(
+            packedWitness: packedWitness,
+            parameters: directPackedParameters,
+            relationKey: directPackedRelationKey(slotCount: Int(directPackedParameters.decompositionLimbs)),
+            outerKey: directPackedOuterKey(slotCount: Int(directPackedParameters.decompositionLimbs)),
+            context: context
+        )
+    }
+
+    private func makeDirectPackedStatement(
+        commitment: HachiPCSCommitment,
+        point: [Fq],
+        evaluation: Fq
+    ) throws -> ShortLinearWitnessStatement {
+        let packedChunkCount = Int(commitment.packedChunkCount)
+        let limbCount = Int(directPackedParameters.decompositionLimbs)
+        let lambda = makeDirectPackedEvaluationWeights(
+            point: point,
+            packedChunkCount: packedChunkCount,
+            valueCount: Int(commitment.valueCount)
+        )
+        let bindingKey = directPackedBindingKey(slotCount: limbCount)
+        let relationKey = directPackedRelationKey(slotCount: limbCount)
+        let outerKey = directPackedOuterKey(slotCount: limbCount)
+
+        return ShortLinearWitnessStatement(
+            parameters: directPackedParameters,
+            statementDigest: commitment.statementDigest,
+            evaluationWeightDigest: digest(
+                lambda.flatMap { chunk in
+                    chunk.flatMap { $0.toBytes() }
+                },
+                domain: "NuMeQ.Decider.Hachi.DirectPacked.Lambda"
+            ),
+            chunkCount: packedChunkCount,
+            limbCount: limbCount,
+            bindingKey: bindingKey,
+            relationKey: relationKey,
+            outerKey: outerKey,
+            bindingImageKey: directPackedBindingImageKey(slotCount: packedChunkCount),
+            relationImageKey: directPackedRelationImageKey(slotCount: packedChunkCount),
+            evaluationImageKey: directPackedEvaluationImageKey(),
+            outerImageKey: directPackedOuterImageKey(slotCount: packedChunkCount),
+            evaluationWeights: lambda,
+            outerCommitments: commitment.directPackedOuterCommitments,
+            claimedValue: evaluation
+        )
+    }
+
+    private func makeDirectPackedEvaluationWeights(
+        point: [Fq],
+        packedChunkCount: Int,
+        valueCount: Int
+    ) -> [[RingElement]] {
+        let lambdaByChunk = makePackedEqLinearFunctional(
+            point: point,
+            ell: point.count,
+            packedChunkCount: packedChunkCount,
+            valueCount: valueCount
+        )
+        let base = Fq(UInt64(directPackedParameters.decompositionBase))
+        return lambdaByChunk.map { chunkWeights in
+            var scale = Fq.one
+            var limbWeights = [RingElement]()
+            limbWeights.reserveCapacity(Int(directPackedParameters.decompositionLimbs))
+            for _ in 0..<Int(directPackedParameters.decompositionLimbs) {
+                limbWeights.append(
+                    RingElement(coeffs: chunkWeights.map { scale * $0 })
+                )
+                scale *= base
+            }
+            return limbWeights
+        }
+    }
+
+    private func directPackedStatementDigest(
+        packedChunkCount: Int,
+        valueCount: Int
+    ) -> [UInt8] {
+        var writer = BinaryWriter()
+        writer.appendLengthPrefixed(directPackedParameters.parameterDigest)
+        writer.append(UInt32(clamping: packedChunkCount))
+        writer.append(UInt32(clamping: valueCount))
+        return digest(
+            [UInt8](writer.data),
+            domain: "NuMeQ.Decider.Hachi.DirectPacked.Statement"
+        )
+    }
+
     private func compareCommitment(
         provided: HachiPCSCommitment,
         expected: HachiPCSCommitment,
@@ -774,14 +1155,14 @@ internal struct HachiPCSBackend {
                 )
             ]
         }
+        if actual.mode != expected.mode {
+            return [HachiPCSArtifactDiff(oracle: oracle, component: "mode", detail: "expected \(expected.mode), got \(actual.mode)")]
+        }
         if actual.tableCommitment != expected.tableCommitment {
             return [HachiPCSArtifactDiff(oracle: oracle, component: "tableCommitment", detail: "commitment mismatch")]
         }
-        if actual.tableDigest != expected.tableDigest {
-            return [HachiPCSArtifactDiff(oracle: oracle, component: "tableDigest", detail: "digest mismatch")]
-        }
-        if actual.merkleRoot != expected.merkleRoot {
-            return [HachiPCSArtifactDiff(oracle: oracle, component: "merkleRoot", detail: "root mismatch")]
+        if actual.directPackedOuterCommitments != expected.directPackedOuterCommitments {
+            return [HachiPCSArtifactDiff(oracle: oracle, component: "directPackedOuterCommitments", detail: "outer commitment vector mismatch")]
         }
         if actual.parameterDigest != expected.parameterDigest {
             return [HachiPCSArtifactDiff(oracle: oracle, component: "parameterDigest", detail: "parameter digest mismatch")]
@@ -789,14 +1170,33 @@ internal struct HachiPCSBackend {
         if actual.valueCount != expected.valueCount {
             return [HachiPCSArtifactDiff(oracle: oracle, component: "valueCount", detail: "expected \(expected.valueCount), got \(actual.valueCount)")]
         }
-        if actual.codewordLength != expected.codewordLength {
-            return [HachiPCSArtifactDiff(oracle: oracle, component: "codewordLength", detail: "expected \(expected.codewordLength), got \(actual.codewordLength)")]
+        if actual.packedChunkCount != expected.packedChunkCount {
+            return [HachiPCSArtifactDiff(oracle: oracle, component: "packedChunkCount", detail: "expected \(expected.packedChunkCount), got \(actual.packedChunkCount)")]
+        }
+        if actual.statementDigest != expected.statementDigest {
+            return [HachiPCSArtifactDiff(oracle: oracle, component: "statementDigest", detail: "digest mismatch")]
+        }
+        switch expected.mode {
+        case .directPacked:
+            if actual.merkleRoot.isEmpty == false || actual.codewordLength != 0 || actual.tableDigest != expected.tableDigest {
+                return [HachiPCSArtifactDiff(oracle: oracle, component: "directPackedShape", detail: "unexpected general-path artifacts on direct-packed commitment")]
+            }
+        case .general:
+            if actual.tableDigest != expected.tableDigest {
+                return [HachiPCSArtifactDiff(oracle: oracle, component: "tableDigest", detail: "digest mismatch")]
+            }
+            if actual.merkleRoot != expected.merkleRoot {
+                return [HachiPCSArtifactDiff(oracle: oracle, component: "merkleRoot", detail: "root mismatch")]
+            }
+            if actual.codewordLength != expected.codewordLength {
+                return [HachiPCSArtifactDiff(oracle: oracle, component: "codewordLength", detail: "expected \(expected.codewordLength), got \(actual.codewordLength)")]
+            }
         }
         return []
     }
 
     private func verifyAuthenticationPath(
-        opening: HachiPCSOpening,
+        opening: HachiGeneralPCSOpeningProof,
         commitment: HachiPCSCommitment
     ) -> Bool {
         var current = leafHash(opening.codewordValue)
@@ -817,6 +1217,7 @@ private struct HachiPCSOracleArtifact {
     let commitment: HachiPCSCommitment
     let codeword: [Fq]
     let merkleLevels: [[[UInt8]]]
+    let directPackedWitnessMaterial: DirectPackedWitnessMaterial?
 
     func authenticationPath(for leafIndex: Int) -> [[UInt8]] {
         guard merkleLevels.isEmpty == false else { return [] }

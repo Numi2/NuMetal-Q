@@ -1,0 +1,96 @@
+{
+  "": {
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/primary.swiftdeps"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/AcceptanceSupport.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/AcceptanceSupport.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/AcceptanceSupport.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/AcceptanceSupport~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/AcceptanceSupport.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/AcceptanceSupport.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/ApplePQIntegrationTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ApplePQIntegrationTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ApplePQIntegrationTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ApplePQIntegrationTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ApplePQIntegrationTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ApplePQIntegrationTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/BackgroundAuthorizationTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/BackgroundAuthorizationTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/BackgroundAuthorizationTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/BackgroundAuthorizationTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/BackgroundAuthorizationTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/BackgroundAuthorizationTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/ClusterSeedTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterSeedTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterSeedTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterSeedTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterSeedTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterSeedTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/ClusterWorkPacketTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterWorkPacketTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterWorkPacketTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterWorkPacketTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterWorkPacketTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ClusterWorkPacketTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/CryptoHardeningTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/CryptoHardeningTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/CryptoHardeningTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/CryptoHardeningTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/CryptoHardeningTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/CryptoHardeningTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/EndToEndDemoTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/EndToEndDemoTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/EndToEndDemoTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/EndToEndDemoTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/EndToEndDemoTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/EndToEndDemoTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/HachiPCSVerifierBoundaryTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/HachiPCSVerifierBoundaryTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/HachiPCSVerifierBoundaryTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/HachiPCSVerifierBoundaryTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/HachiPCSVerifierBoundaryTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/HachiPCSVerifierBoundaryTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/MetalFoldProverTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/MetalFoldProverTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/MetalFoldProverTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/MetalFoldProverTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/MetalFoldProverTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/MetalFoldProverTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/ProductionReadinessTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ProductionReadinessTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ProductionReadinessTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ProductionReadinessTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ProductionReadinessTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/ProductionReadinessTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/SyncClusterTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/SyncClusterTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/SyncClusterTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/SyncClusterTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/SyncClusterTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/SyncClusterTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/TranscriptVectorTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/TranscriptVectorTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/TranscriptVectorTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/TranscriptVectorTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/TranscriptVectorTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/TranscriptVectorTests.dia"
+  },
+  "/Users/home/NuMetal-Q/Tests/NuMetal_QTests/WitnessPackingTests.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/WitnessPackingTests.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/WitnessPackingTests.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/WitnessPackingTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/WitnessPackingTests.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QTests.build/WitnessPackingTests.dia"
+  }
+}

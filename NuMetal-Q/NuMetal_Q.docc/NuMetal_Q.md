@@ -11,6 +11,14 @@ for recursive accumulation, Hachi as the compiled terminal decider `D_Nu`
 over the certified quartic tower `Fq4`, and application-layer signing plus
 transport around the exported envelope.
 
+The terminal PCS is mode-split by packed oracle size:
+
+- masked multilinear oracles with `packedChunkCount ∈ {1,2,4}` use the
+  direct-packed relation-opening path,
+- the direct-packed path proves the chunk-local short linear witness relation
+  with hiding accumulator commitments and a residual masked opening,
+- larger packed tables stay on the general Hachi codeword and Merkle path.
+
 The public API model:
 
 1. **Seed**: Create a base-case proof from a witness and public inputs.

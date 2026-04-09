@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "storageLayoutVersion": 3,
+  "shaders": [
+    "NuAG64Common",
+    "NuFieldKernels",
+    "NuCommitKernels",
+    "NuDecompKernels",
+    "NuMatrixKernels",
+    "NuSumCheckKernels",
+    "NuSealKernels"
+  ]
+}

@@ -530,14 +530,27 @@ private extension HachiSealEngine {
         rows: [HachiPCSCommitment]
     ) -> Data {
         var writer = BinaryWriter()
-        writer.appendLengthPrefixed(Data(witness.tableDigest))
-        writer.appendLengthPrefixed(Data(witness.merkleRoot))
+        appendCommitmentDigest(witness, into: &writer)
         writer.append(UInt32(clamping: rows.count))
         for row in rows {
-            writer.appendLengthPrefixed(Data(row.tableDigest))
-            writer.appendLengthPrefixed(Data(row.merkleRoot))
+            appendCommitmentDigest(row, into: &writer)
         }
         return writer.data
+    }
+
+    private func appendCommitmentDigest(
+        _ commitment: HachiPCSCommitment,
+        into writer: inout BinaryWriter
+    ) {
+        writer.append(commitment.mode.rawValue)
+        writer.append(UInt32(clamping: commitment.directPackedOuterCommitments.count))
+        for outerCommitment in commitment.directPackedOuterCommitments {
+            writer.append(Data(outerCommitment.value.toBytes()))
+        }
+        writer.appendLengthPrefixed(Data(commitment.tableDigest))
+        writer.appendLengthPrefixed(Data(commitment.merkleRoot))
+        writer.append(commitment.packedChunkCount)
+        writer.appendLengthPrefixed(Data(commitment.statementDigest))
     }
 
     func maskedCommitments(for proof: HachiTerminalProof) -> [SpartanOracleID: HachiPCSCommitment] {

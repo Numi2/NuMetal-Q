@@ -688,6 +688,132 @@ final class CryptoHardeningTests: XCTestCase {
         }
     }
 
+    func testDirectPackedOpeningMetalMatchesCPU() throws {
+        let context = try AcceptanceSupport.metalContextOrSkip()
+        let backend = HachiPCSBackend()
+        let oracle = SpartanOracleID.witness()
+        let polynomial = AcceptanceSupport.samplePolynomial(seed: 77, numVars: 6)
+        let point = AcceptanceSupport.samplePoint(seed: 23, numVars: 6)
+        let evaluation = polynomial.evaluate(at: point)
+        let query = SpartanPCSQuery(oracle: oracle, point: point, value: evaluation)
+
+        let cpuCommitment = try backend.commit(label: oracle, polynomial: polynomial)
+        let gpuCommitment = try backend.commit(label: oracle, polynomial: polynomial, context: context)
+        XCTAssertEqual(cpuCommitment, gpuCommitment)
+
+        var cpuOpenTranscript = NuTranscriptSeal(domain: "Tests.HachiPCS.DirectPacked")
+        var gpuOpenTranscript = NuTranscriptSeal(domain: "Tests.HachiPCS.DirectPacked")
+        let cpuProof = try backend.openBatch(
+            polynomials: [oracle: polynomial],
+            queries: [query],
+            transcript: &cpuOpenTranscript
+        )
+        let gpuProof = try backend.openBatch(
+            polynomials: [oracle: polynomial],
+            queries: [query],
+            transcript: &gpuOpenTranscript,
+            context: context
+        )
+
+        XCTAssertEqual(cpuProof, gpuProof)
+        guard let cpuDirect = cpuProof.classes.first?.openings.first?.directPacked,
+              let gpuDirect = gpuProof.classes.first?.openings.first?.directPacked else {
+            throw XCTSkip("expected direct-packed proof in AG64 64-slot regime")
+        }
+        XCTAssertEqual(cpuDirect.relationProof.finalOpening.shortResponses, gpuDirect.relationProof.finalOpening.shortResponses)
+        XCTAssertEqual(cpuDirect.relationProof.finalOpening.outerResponses, gpuDirect.relationProof.finalOpening.outerResponses)
+        XCTAssertEqual(cpuDirect.relationProof.transcriptBinding, gpuDirect.relationProof.transcriptBinding)
+
+        var cpuVerifyTranscript = NuTranscriptSeal(domain: "Tests.HachiPCS.DirectPacked")
+        var cpuDiagnostics = HachiVerificationDiagnostics()
+        XCTAssertTrue(
+            try backend.verifyBatch(
+                commitments: [oracle: cpuCommitment],
+                queries: [query],
+                proof: cpuProof,
+                transcript: &cpuVerifyTranscript,
+                diagnostics: &cpuDiagnostics
+            ),
+            cpuDiagnostics.summary
+        )
+
+        var gpuVerifyTranscript = NuTranscriptSeal(domain: "Tests.HachiPCS.DirectPacked")
+        var gpuDiagnostics = HachiVerificationDiagnostics()
+        XCTAssertTrue(
+            try backend.verifyBatch(
+                commitments: [oracle: gpuCommitment],
+                queries: [query],
+                proof: gpuProof,
+                transcript: &gpuVerifyTranscript,
+                context: context,
+                diagnostics: &gpuDiagnostics
+            ),
+            gpuDiagnostics.summary
+        )
+    }
+
+    func testDirectPackedOpeningSupportsTwoAndFourChunks() throws {
+        let context = try AcceptanceSupport.metalContextOrSkip()
+        let backend = HachiPCSBackend()
+        let oracle = SpartanOracleID.witness()
+
+        for (numVars, expectedChunkCount) in [(7, UInt32(2)), (8, UInt32(4))] {
+            let polynomial = AcceptanceSupport.samplePolynomial(seed: UInt64(100 + numVars), numVars: numVars)
+            let point = AcceptanceSupport.samplePoint(seed: UInt64(200 + numVars), numVars: numVars)
+            let evaluation = polynomial.evaluate(at: point)
+            let query = SpartanPCSQuery(oracle: oracle, point: point, value: evaluation)
+
+            let cpuCommitment = try backend.commit(label: oracle, polynomial: polynomial)
+            let gpuCommitment = try backend.commit(label: oracle, polynomial: polynomial, context: context)
+            XCTAssertEqual(cpuCommitment, gpuCommitment)
+            XCTAssertEqual(cpuCommitment.mode, HachiPCSCommitmentMode.directPacked)
+            XCTAssertEqual(cpuCommitment.packedChunkCount, expectedChunkCount)
+            XCTAssertEqual(cpuCommitment.directPackedOuterCommitments.count, Int(expectedChunkCount))
+
+            var cpuOpenTranscript = NuTranscriptSeal(domain: "Tests.HachiPCS.DirectPacked.MultiChunk")
+            var gpuOpenTranscript = NuTranscriptSeal(domain: "Tests.HachiPCS.DirectPacked.MultiChunk")
+            let cpuProof = try backend.openBatch(
+                polynomials: [oracle: polynomial],
+                queries: [query],
+                transcript: &cpuOpenTranscript
+            )
+            let gpuProof = try backend.openBatch(
+                polynomials: [oracle: polynomial],
+                queries: [query],
+                transcript: &gpuOpenTranscript,
+                context: context
+            )
+            XCTAssertEqual(cpuProof, gpuProof)
+
+            var cpuVerifyTranscript = NuTranscriptSeal(domain: "Tests.HachiPCS.DirectPacked.MultiChunk")
+            var cpuDiagnostics = HachiVerificationDiagnostics()
+            XCTAssertTrue(
+                try backend.verifyBatch(
+                    commitments: [oracle: cpuCommitment],
+                    queries: [query],
+                    proof: cpuProof,
+                    transcript: &cpuVerifyTranscript,
+                    diagnostics: &cpuDiagnostics
+                ),
+                cpuDiagnostics.summary
+            )
+
+            var gpuVerifyTranscript = NuTranscriptSeal(domain: "Tests.HachiPCS.DirectPacked.MultiChunk")
+            var gpuDiagnostics = HachiVerificationDiagnostics()
+            XCTAssertTrue(
+                try backend.verifyBatch(
+                    commitments: [oracle: gpuCommitment],
+                    queries: [query],
+                    proof: gpuProof,
+                    transcript: &gpuVerifyTranscript,
+                    context: context,
+                    diagnostics: &gpuDiagnostics
+                ),
+                gpuDiagnostics.summary
+            )
+        }
+    }
+
     func testNuMeQSealVerifyCpuOnlyMatchesMetalAssistedAndCapturesTrace() async throws {
         let context = try AcceptanceSupport.metalContextOrSkip()
         let (proof, shape, publicHeader) = try await makeRealSealProof()
@@ -792,15 +918,7 @@ final class CryptoHardeningTests: XCTestCase {
             mutate(proof) { terminalProof in
                 let firstClass = tryMutateFirstClass(terminalProof.pcsOpeningProof) { klass in
                     guard let opening = klass.openings.first else { return klass }
-                    let mutatedOpening = HachiPCSOpening(
-                        oracle: opening.oracle,
-                        evaluation: opening.evaluation,
-                        scheduleDigest: opening.scheduleDigest,
-                        evaluationDigest: opening.evaluationDigest,
-                        codewordIndex: opening.codewordIndex &+ 1,
-                        codewordValue: opening.codewordValue,
-                        merkleAuthenticationPath: opening.merkleAuthenticationPath
-                    )
+                    let mutatedOpening = tamperedOpeningChangingRelation(opening)
                     return HachiPCSBatchClassOpeningProof(
                         point: klass.point,
                         pointDigest: klass.pointDigest,
@@ -813,16 +931,7 @@ final class CryptoHardeningTests: XCTestCase {
             mutate(proof) { terminalProof in
                 let firstClass = tryMutateFirstClass(terminalProof.pcsOpeningProof) { klass in
                     guard let opening = klass.openings.first else { return klass }
-                    let mutatedOpening = HachiPCSOpening(
-                        oracle: opening.oracle,
-                        evaluation: opening.evaluation,
-                        scheduleDigest: opening.scheduleDigest,
-                        evaluationDigest: opening.evaluationDigest,
-                        codewordIndex: opening.codewordIndex,
-                        codewordValue: opening.codewordValue,
-                        merkleAuthenticationPath: [flipped(opening.merkleAuthenticationPath.first ?? [])]
-                            + opening.merkleAuthenticationPath.dropFirst()
-                    )
+                    let mutatedOpening = tamperedOpeningChangingAuthenticator(opening)
                     return HachiPCSBatchClassOpeningProof(
                         point: klass.point,
                         pointDigest: klass.pointDigest,
@@ -887,16 +996,7 @@ final class CryptoHardeningTests: XCTestCase {
             mutate(proof) { terminalProof in
                 let firstClass = tryMutateFirstClass(terminalProof.pcsOpeningProof) { klass in
                     guard let opening = klass.openings.first else { return klass }
-                    let mutatedOpening = HachiPCSOpening(
-                        oracle: opening.oracle,
-                        evaluation: opening.evaluation,
-                        scheduleDigest: opening.scheduleDigest,
-                        evaluationDigest: opening.evaluationDigest,
-                        codewordIndex: opening.codewordIndex,
-                        codewordValue: opening.codewordValue,
-                        merkleAuthenticationPath: [flipped(opening.merkleAuthenticationPath.first ?? [])]
-                            + opening.merkleAuthenticationPath.dropFirst()
-                    )
+                    let mutatedOpening = tamperedOpeningChangingAuthenticator(opening)
                     return HachiPCSBatchClassOpeningProof(
                         point: klass.point,
                         pointDigest: klass.pointDigest,
@@ -967,6 +1067,93 @@ final class CryptoHardeningTests: XCTestCase {
         var coeffs = [Fq](repeating: .zero, count: RingElement.degree)
         coeffs[index] = coefficient
         return RingElement(coeffs: coeffs)
+    }
+
+    private func tamperedOpeningChangingRelation(_ opening: HachiPCSOpening) -> HachiPCSOpening {
+        switch opening.mode {
+        case .directPacked:
+            guard let directPacked = opening.directPacked else { return opening }
+            var shortResponses = directPacked.relationProof.finalOpening.shortResponses
+            shortResponses[0].coeffs[0] += .one
+            let finalOpening = ShortLinearWitnessFinalOpening(
+                bindingMaskCommitment: directPacked.relationProof.finalOpening.bindingMaskCommitment,
+                relationMaskCommitment: directPacked.relationProof.finalOpening.relationMaskCommitment,
+                evaluationMaskCommitment: directPacked.relationProof.finalOpening.evaluationMaskCommitment,
+                outerMaskCommitment: directPacked.relationProof.finalOpening.outerMaskCommitment,
+                shortResponses: shortResponses,
+                outerResponses: directPacked.relationProof.finalOpening.outerResponses
+            )
+            return HachiPCSOpening(
+                oracle: opening.oracle,
+                evaluation: opening.evaluation,
+                scheduleDigest: opening.scheduleDigest,
+                evaluationDigest: opening.evaluationDigest,
+                directPacked: HachiDirectPackedOpeningProof(
+                    packedChunkCount: directPacked.packedChunkCount,
+                    relationProof: ShortLinearWitnessProof(
+                        initialBindingCommitment: directPacked.relationProof.initialBindingCommitment,
+                        accumulatorRounds: directPacked.relationProof.accumulatorRounds,
+                        finalOpening: finalOpening,
+                        restartNonce: directPacked.relationProof.restartNonce,
+                        transcriptBinding: directPacked.relationProof.transcriptBinding
+                    )
+                )
+            )
+        case .general:
+            guard let general = opening.general else { return opening }
+            return HachiPCSOpening(
+                oracle: opening.oracle,
+                evaluation: opening.evaluation,
+                scheduleDigest: opening.scheduleDigest,
+                evaluationDigest: opening.evaluationDigest,
+                general: HachiGeneralPCSOpeningProof(
+                    codewordIndex: general.codewordIndex &+ 1,
+                    codewordValue: general.codewordValue,
+                    merkleAuthenticationPath: general.merkleAuthenticationPath
+                )
+            )
+        }
+    }
+
+    private func tamperedOpeningChangingAuthenticator(_ opening: HachiPCSOpening) -> HachiPCSOpening {
+        switch opening.mode {
+        case .directPacked:
+            guard let directPacked = opening.directPacked else { return opening }
+            var initialBindingCommitment = directPacked.relationProof.initialBindingCommitment
+            initialBindingCommitment = AjtaiCommitment(
+                value: initialBindingCommitment.value + RingElement(constant: .one)
+            )
+            return HachiPCSOpening(
+                oracle: opening.oracle,
+                evaluation: opening.evaluation,
+                scheduleDigest: opening.scheduleDigest,
+                evaluationDigest: opening.evaluationDigest,
+                directPacked: HachiDirectPackedOpeningProof(
+                    packedChunkCount: directPacked.packedChunkCount,
+                    relationProof: ShortLinearWitnessProof(
+                        initialBindingCommitment: initialBindingCommitment,
+                        accumulatorRounds: directPacked.relationProof.accumulatorRounds,
+                        finalOpening: directPacked.relationProof.finalOpening,
+                        restartNonce: directPacked.relationProof.restartNonce,
+                        transcriptBinding: directPacked.relationProof.transcriptBinding
+                    )
+                )
+            )
+        case .general:
+            guard let general = opening.general else { return opening }
+            return HachiPCSOpening(
+                oracle: opening.oracle,
+                evaluation: opening.evaluation,
+                scheduleDigest: opening.scheduleDigest,
+                evaluationDigest: opening.evaluationDigest,
+                general: HachiGeneralPCSOpeningProof(
+                    codewordIndex: general.codewordIndex,
+                    codewordValue: general.codewordValue,
+                    merkleAuthenticationPath: [flipped(general.merkleAuthenticationPath.first ?? [])]
+                        + general.merkleAuthenticationPath.dropFirst()
+                )
+            )
+        }
     }
 
     private func tryMutateFirstClass(

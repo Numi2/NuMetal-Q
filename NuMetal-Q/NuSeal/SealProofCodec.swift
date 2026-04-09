@@ -228,11 +228,18 @@ public enum SealProofCodec {
         encode(opening.evaluation, into: &writer)
         writer.appendLengthPrefixed(opening.scheduleDigest)
         writer.appendLengthPrefixed(opening.evaluationDigest)
-        writer.append(opening.codewordIndex)
-        encode(opening.codewordValue, into: &writer)
-        writer.append(UInt32(clamping: opening.merkleAuthenticationPath.count))
-        for node in opening.merkleAuthenticationPath {
-            writer.appendLengthPrefixed(node)
+        writer.append(opening.mode.rawValue)
+        switch opening.mode {
+        case .directPacked:
+            guard let directPacked = opening.directPacked else {
+                preconditionFailure("direct-packed opening missing payload")
+            }
+            encode(directPacked, into: &writer)
+        case .general:
+            guard let general = opening.general else {
+                preconditionFailure("general opening missing payload")
+            }
+            encode(general, into: &writer)
         }
     }
 
@@ -241,6 +248,51 @@ public enum SealProofCodec {
         let evaluation = try decodeFq(from: &reader)
         let scheduleDigest = try reader.readLengthPrefixedBytes()
         let evaluationDigest = try reader.readLengthPrefixedBytes()
+        guard let mode = HachiPCSOpeningMode(rawValue: try reader.readUInt8()) else {
+            throw BinaryReader.Error.invalidData
+        }
+        switch mode {
+        case .directPacked:
+            return HachiPCSOpening(
+                oracle: oracle,
+                evaluation: evaluation,
+                scheduleDigest: scheduleDigest,
+                evaluationDigest: evaluationDigest,
+                directPacked: try decodeDirectPackedOpening(from: &reader)
+            )
+        case .general:
+            return HachiPCSOpening(
+                oracle: oracle,
+                evaluation: evaluation,
+                scheduleDigest: scheduleDigest,
+                evaluationDigest: evaluationDigest,
+                general: try decodeGeneralOpening(from: &reader)
+            )
+        }
+    }
+
+    private static func encode(_ proof: HachiDirectPackedOpeningProof, into writer: inout BinaryWriter) {
+        writer.append(proof.packedChunkCount)
+        encode(proof.relationProof, into: &writer)
+    }
+
+    private static func decodeDirectPackedOpening(from reader: inout BinaryReader) throws -> HachiDirectPackedOpeningProof {
+        HachiDirectPackedOpeningProof(
+            packedChunkCount: try reader.readUInt32(),
+            relationProof: try decodeShortLinearWitnessProof(from: &reader)
+        )
+    }
+
+    private static func encode(_ proof: HachiGeneralPCSOpeningProof, into writer: inout BinaryWriter) {
+        writer.append(proof.codewordIndex)
+        encode(proof.codewordValue, into: &writer)
+        writer.append(UInt32(clamping: proof.merkleAuthenticationPath.count))
+        for node in proof.merkleAuthenticationPath {
+            writer.appendLengthPrefixed(node)
+        }
+    }
+
+    private static func decodeGeneralOpening(from reader: inout BinaryReader) throws -> HachiGeneralPCSOpeningProof {
         let codewordIndex = try reader.readUInt32()
         let codewordValue = try decodeFq(from: &reader)
         let pathCount = Int(try reader.readUInt32())
@@ -249,25 +301,125 @@ public enum SealProofCodec {
         for _ in 0..<pathCount {
             path.append(try reader.readLengthPrefixedBytes())
         }
-        return HachiPCSOpening(
-            oracle: oracle,
-            evaluation: evaluation,
-            scheduleDigest: scheduleDigest,
-            evaluationDigest: evaluationDigest,
+        return HachiGeneralPCSOpeningProof(
             codewordIndex: codewordIndex,
             codewordValue: codewordValue,
             merkleAuthenticationPath: path
         )
     }
 
+    private static func encode(_ proof: ShortLinearWitnessProof, into writer: inout BinaryWriter) {
+        encode(proof.initialBindingCommitment, into: &writer)
+        writer.append(UInt32(clamping: proof.accumulatorRounds.count))
+        for round in proof.accumulatorRounds {
+            encode(round, into: &writer)
+        }
+        encode(proof.finalOpening, into: &writer)
+        writer.append(proof.restartNonce)
+        writer.appendLengthPrefixed(proof.transcriptBinding)
+    }
+
+    private static func decodeShortLinearWitnessProof(from reader: inout BinaryReader) throws -> ShortLinearWitnessProof {
+        return ShortLinearWitnessProof(
+            initialBindingCommitment: try decodeCommitment(from: &reader),
+            accumulatorRounds: try decodeAccumulatorRounds(from: &reader),
+            finalOpening: try decodeShortLinearWitnessFinalOpening(from: &reader),
+            restartNonce: try reader.readUInt32(),
+            transcriptBinding: try reader.readLengthPrefixedBytes()
+        )
+    }
+
+    private static func decodeAccumulatorRounds(from reader: inout BinaryReader) throws -> [ShortLinearWitnessAccumulatorRound] {
+        let roundCount = Int(try reader.readUInt32())
+        var rounds = [ShortLinearWitnessAccumulatorRound]()
+        rounds.reserveCapacity(roundCount)
+        for _ in 0..<roundCount {
+            rounds.append(try decodeShortLinearWitnessAccumulatorRound(from: &reader))
+        }
+        return rounds
+    }
+
+    private static func encode(_ round: ShortLinearWitnessAccumulatorRound, into writer: inout BinaryWriter) {
+        encode(round.bindingLeft, into: &writer)
+        encode(round.bindingRight, into: &writer)
+        encode(round.relationLeft, into: &writer)
+        encode(round.relationRight, into: &writer)
+        encode(round.evaluationLeft, into: &writer)
+        encode(round.evaluationRight, into: &writer)
+        encode(round.outerLeft, into: &writer)
+        encode(round.outerRight, into: &writer)
+    }
+
+    private static func decodeShortLinearWitnessAccumulatorRound(from reader: inout BinaryReader) throws -> ShortLinearWitnessAccumulatorRound {
+        ShortLinearWitnessAccumulatorRound(
+            bindingLeft: try decodeCommitment(from: &reader),
+            bindingRight: try decodeCommitment(from: &reader),
+            relationLeft: try decodeCommitment(from: &reader),
+            relationRight: try decodeCommitment(from: &reader),
+            evaluationLeft: try decodeCommitment(from: &reader),
+            evaluationRight: try decodeCommitment(from: &reader),
+            outerLeft: try decodeCommitment(from: &reader),
+            outerRight: try decodeCommitment(from: &reader)
+        )
+    }
+
+    private static func encode(_ finalOpening: ShortLinearWitnessFinalOpening, into writer: inout BinaryWriter) {
+        encode(finalOpening.bindingMaskCommitment, into: &writer)
+        encode(finalOpening.relationMaskCommitment, into: &writer)
+        encode(finalOpening.evaluationMaskCommitment, into: &writer)
+        encode(finalOpening.outerMaskCommitment, into: &writer)
+        writer.append(UInt32(clamping: finalOpening.shortResponses.count))
+        for response in finalOpening.shortResponses {
+            encode(response, into: &writer)
+        }
+        writer.append(UInt32(clamping: finalOpening.outerResponses.count))
+        for response in finalOpening.outerResponses {
+            encode(response, into: &writer)
+        }
+    }
+
+    private static func decodeShortLinearWitnessFinalOpening(from reader: inout BinaryReader) throws -> ShortLinearWitnessFinalOpening {
+        let bindingMaskCommitment = try decodeCommitment(from: &reader)
+        let relationMaskCommitment = try decodeCommitment(from: &reader)
+        let evaluationMaskCommitment = try decodeCommitment(from: &reader)
+        let outerMaskCommitment = try decodeCommitment(from: &reader)
+        let shortCount = Int(try reader.readUInt32())
+        var shortResponses = [RingElement]()
+        shortResponses.reserveCapacity(shortCount)
+        for _ in 0..<shortCount {
+            shortResponses.append(try decodeRing(from: &reader))
+        }
+        let outerCount = Int(try reader.readUInt32())
+        var outerResponses = [RingElement]()
+        outerResponses.reserveCapacity(outerCount)
+        for _ in 0..<outerCount {
+            outerResponses.append(try decodeRing(from: &reader))
+        }
+        return ShortLinearWitnessFinalOpening(
+            bindingMaskCommitment: bindingMaskCommitment,
+            relationMaskCommitment: relationMaskCommitment,
+            evaluationMaskCommitment: evaluationMaskCommitment,
+            outerMaskCommitment: outerMaskCommitment,
+            shortResponses: shortResponses,
+            outerResponses: outerResponses
+        )
+    }
+
     private static func encode(_ commitment: HachiPCSCommitment, into writer: inout BinaryWriter) {
         encode(commitment.oracle, into: &writer)
+        writer.append(commitment.mode.rawValue)
         encode(commitment.tableCommitment, into: &writer)
+        writer.append(UInt32(clamping: commitment.directPackedOuterCommitments.count))
+        for directPackedOuterCommitment in commitment.directPackedOuterCommitments {
+            encode(directPackedOuterCommitment, into: &writer)
+        }
         writer.appendLengthPrefixed(commitment.tableDigest)
         writer.appendLengthPrefixed(commitment.merkleRoot)
         writer.appendLengthPrefixed(commitment.parameterDigest)
         writer.append(commitment.valueCount)
         writer.append(commitment.codewordLength)
+        writer.append(commitment.packedChunkCount)
+        writer.appendLengthPrefixed(commitment.statementDigest)
     }
 
     private static func encode(_ commitments: [HachiPCSCommitment], into writer: inout BinaryWriter) {
@@ -280,13 +432,34 @@ public enum SealProofCodec {
     private static func decodeHachiCommitment(from reader: inout BinaryReader) throws -> HachiPCSCommitment {
         HachiPCSCommitment(
             oracle: try decodeOracleID(from: &reader),
+            mode: try decodeCommitmentMode(from: &reader),
             tableCommitment: try decodeCommitment(from: &reader),
+            directPackedOuterCommitments: try decodeCommitmentArray(from: &reader),
             tableDigest: try reader.readLengthPrefixedBytes(),
             merkleRoot: try reader.readLengthPrefixedBytes(),
             parameterDigest: try reader.readLengthPrefixedBytes(),
             valueCount: try reader.readUInt32(),
-            codewordLength: try reader.readUInt32()
+            codewordLength: try reader.readUInt32(),
+            packedChunkCount: try reader.readUInt32(),
+            statementDigest: try reader.readLengthPrefixedBytes()
         )
+    }
+
+    private static func decodeCommitmentMode(from reader: inout BinaryReader) throws -> HachiPCSCommitmentMode {
+        guard let mode = HachiPCSCommitmentMode(rawValue: try reader.readUInt8()) else {
+            throw BinaryReader.Error.invalidData
+        }
+        return mode
+    }
+
+    private static func decodeCommitmentArray(from reader: inout BinaryReader) throws -> [AjtaiCommitment] {
+        let count = Int(try reader.readUInt32())
+        var commitments = [AjtaiCommitment]()
+        commitments.reserveCapacity(count)
+        for _ in 0..<count {
+            commitments.append(try decodeCommitment(from: &reader))
+        }
+        return commitments
     }
 
     private static func decodeHachiCommitmentArray(from reader: inout BinaryReader) throws -> [HachiPCSCommitment] {

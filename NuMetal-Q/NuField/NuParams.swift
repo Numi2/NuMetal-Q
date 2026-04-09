@@ -75,6 +75,56 @@ public struct NuParams: Sendable {
                 domain: "NuMeQ.Params.Seal.Hachi.Verifier",
                 seed: sealSeed,
                 count: 96
+            ),
+            directPackedPoK: DirectPackedPoKParameters(
+                witnessBindingSeed: NuParameterExpander.expandBytes(
+                    domain: "NuMeQ.Params.Seal.Hachi.DirectPacked.Binding",
+                    seed: sealSeed,
+                    count: 32
+                ),
+                relationSeed: NuParameterExpander.expandBytes(
+                    domain: "NuMeQ.Params.Seal.Hachi.DirectPacked.Relation",
+                    seed: sealSeed,
+                    count: 32
+                ),
+                outerSeed: NuParameterExpander.expandBytes(
+                    domain: "NuMeQ.Params.Seal.Hachi.DirectPacked.Outer",
+                    seed: sealSeed,
+                    count: 32
+                ),
+                bindingImageSeed: NuParameterExpander.expandBytes(
+                    domain: "NuMeQ.Params.Seal.Hachi.DirectPacked.BindingImage",
+                    seed: sealSeed,
+                    count: 32
+                ),
+                relationImageSeed: NuParameterExpander.expandBytes(
+                    domain: "NuMeQ.Params.Seal.Hachi.DirectPacked.RelationImage",
+                    seed: sealSeed,
+                    count: 32
+                ),
+                evaluationImageSeed: NuParameterExpander.expandBytes(
+                    domain: "NuMeQ.Params.Seal.Hachi.DirectPacked.EvaluationImage",
+                    seed: sealSeed,
+                    count: 32
+                ),
+                outerImageSeed: NuParameterExpander.expandBytes(
+                    domain: "NuMeQ.Params.Seal.Hachi.DirectPacked.OuterImage",
+                    seed: sealSeed,
+                    count: 32
+                ),
+                decompositionBase: 2,
+                decompositionLimbs: 64,
+                foldArity: 2,
+                challengeDistributionID: "centeredTernary",
+                roundMaskSigma: 4096,
+                finalMaskSigma: 8192,
+                rejectionSlack: 12,
+                maxAcceptedResponseBound: 1 << 16,
+                maxRestartCount: 128,
+                residualBlocksPerChunk: 2,
+                accumulatorDomain: Data("NuMeQ.Decider.Hachi.DirectPacked.Accumulator".utf8),
+                rejectionDomain: Data("NuMeQ.Decider.Hachi.DirectPacked.Rejection".utf8),
+                securityProfileDigest: profile.profileID.bytes
             )
         )
 
@@ -162,6 +212,7 @@ public struct HachiSealParameterBundle: Sendable, Equatable {
     public let commitmentParameters: [UInt8]
     public let batchingConstants: [UInt8]
     public let verifierConstants: [UInt8]
+    public let directPackedPoK: DirectPackedPoKParameters
 
     public var parameterDigest: [UInt8] {
         let writer = canonicalWriter()
@@ -176,6 +227,7 @@ public struct HachiSealParameterBundle: Sendable, Equatable {
         writer.appendLengthPrefixed(commitmentParameters)
         writer.appendLengthPrefixed(batchingConstants)
         writer.appendLengthPrefixed(verifierConstants)
+        encodeDirectPackedPoK(directPackedPoK, into: &writer)
         return writer
     }
 
@@ -184,6 +236,35 @@ public struct HachiSealParameterBundle: Sendable, Equatable {
             && lhs.seed == rhs.seed
             && lhs.backendID == rhs.backendID
             && lhs.transcriptID == rhs.transcriptID
+    }
+}
+
+public struct DirectPackedPoKParameters: Sendable, Equatable, Codable {
+    public let witnessBindingSeed: [UInt8]
+    public let relationSeed: [UInt8]
+    public let outerSeed: [UInt8]
+    public let bindingImageSeed: [UInt8]
+    public let relationImageSeed: [UInt8]
+    public let evaluationImageSeed: [UInt8]
+    public let outerImageSeed: [UInt8]
+    public let decompositionBase: UInt8
+    public let decompositionLimbs: UInt8
+    public let foldArity: UInt8
+    public let challengeDistributionID: String
+    public let roundMaskSigma: UInt32
+    public let finalMaskSigma: UInt32
+    public let rejectionSlack: UInt32
+    public let maxAcceptedResponseBound: UInt64
+    public let maxRestartCount: UInt16
+    public let residualBlocksPerChunk: UInt8
+    public let accumulatorDomain: Data
+    public let rejectionDomain: Data
+    public let securityProfileDigest: [UInt8]
+
+    public var parameterDigest: [UInt8] {
+        var writer = BinaryWriter()
+        encodeDirectPackedPoK(self, into: &writer)
+        return Array(NuSecurityDigest.sha256(writer.data))
     }
 }
 
@@ -208,4 +289,27 @@ private func encode(_ constants: StageConstants, into writer: inout BinaryWriter
     for value in constants.domainSeparators {
         writer.append(Data(value.toBytes()))
     }
+}
+
+private func encodeDirectPackedPoK(_ parameters: DirectPackedPoKParameters, into writer: inout BinaryWriter) {
+    writer.appendLengthPrefixed(parameters.witnessBindingSeed)
+    writer.appendLengthPrefixed(parameters.relationSeed)
+    writer.appendLengthPrefixed(parameters.outerSeed)
+    writer.appendLengthPrefixed(parameters.bindingImageSeed)
+    writer.appendLengthPrefixed(parameters.relationImageSeed)
+    writer.appendLengthPrefixed(parameters.evaluationImageSeed)
+    writer.appendLengthPrefixed(parameters.outerImageSeed)
+    writer.append(parameters.decompositionBase)
+    writer.append(parameters.decompositionLimbs)
+    writer.append(parameters.foldArity)
+    writer.appendLengthPrefixed(Data(parameters.challengeDistributionID.utf8))
+    writer.append(parameters.roundMaskSigma)
+    writer.append(parameters.finalMaskSigma)
+    writer.append(parameters.rejectionSlack)
+    writer.append(parameters.maxAcceptedResponseBound)
+    writer.append(parameters.maxRestartCount)
+    writer.append(parameters.residualBlocksPerChunk)
+    writer.appendLengthPrefixed(parameters.accumulatorDomain)
+    writer.appendLengthPrefixed(parameters.rejectionDomain)
+    writer.appendLengthPrefixed(parameters.securityProfileDigest)
 }

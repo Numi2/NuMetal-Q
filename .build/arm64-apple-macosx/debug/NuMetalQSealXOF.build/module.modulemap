@@ -1,0 +1,4 @@
+module NuMetalQSealXOF {
+    umbrella header "/Users/home/NuMetal-Q/SealXOF/include/NuMetalQSealXOF.h"
+    export *
+}

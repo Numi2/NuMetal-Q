@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetalQBenchmarks.build/primary.swiftdeps"
+  },
+  "/Users/home/NuMetal-Q/Examples/NuMetalQBenchmarks/main.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetalQBenchmarks.build/main.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetalQBenchmarks.build/main.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetalQBenchmarks.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetalQBenchmarks.build/main.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetalQBenchmarks.build/main.dia"
+  }
+}

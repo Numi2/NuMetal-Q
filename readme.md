@@ -11,6 +11,12 @@ The public profile stays exactly on AG64:
 `q = 2^64 - 2^32 - 31`, `R_q = F_q[X]/(X^64 + 1)`.
 Convolution-heavy kernels scalar-extend through the certified quartic tower, then project back to `Fq` with mandatory subfield checks; the proof statement and assumption family remain in AG64.
 
+The terminal PCS is split by packed size:
+
+- Small masked multilinear oracles with `packedChunkCount ∈ {1,2,4}` use the direct-packed opening path.
+- Direct-packed openings prove the chunk-local short linear relation over `(s_j, t̂_j)` with hiding accumulator commitments and a residual masked opening.
+- Large packed tables stay on the general Hachi codeword/Merkle path.
+
 The public API model:
 
 1. **Seed**: Create a base-case proof from a witness and public inputs.

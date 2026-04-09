@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QPackageTests.build/primary.swiftdeps"
+  },
+  "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal-QPackageTests.derived/runner.swift": {
+    "dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QPackageTests.build/runner.d",
+    "object": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QPackageTests.build/runner.swift.o",
+    "swiftmodule": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QPackageTests.build/runner~partial.swiftmodule",
+    "swift-dependencies": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QPackageTests.build/runner.swiftdeps",
+    "diagnostics": "/Users/home/NuMetal-Q/.build/arm64-apple-macosx/debug/NuMetal_QPackageTests.build/runner.dia"
+  }
+}

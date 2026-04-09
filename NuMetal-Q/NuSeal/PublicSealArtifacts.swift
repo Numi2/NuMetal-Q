@@ -48,7 +48,7 @@ public struct PublicSealStatement: Sendable, Codable, Equatable {
 }
 
 public struct PublicSealProof: Sendable, Codable {
-    public static let currentVersion: UInt16 = 1
+    public static let currentVersion: UInt16 = 3
 
     public let version: UInt16
     public let statement: PublicSealStatement

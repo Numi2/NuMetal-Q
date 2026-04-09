@@ -4,7 +4,7 @@
 - Metal is now the required canonical proving path on supported Apple silicon.
 - `Shape.digest` stays stable.
 - The GPU artifact ABI is versioned independently.
-- The seal proof format is bumped for GPU PCS openings.
+- The seal proof format is bumped for the direct-packed PCS cutover.
 
 ## Implemented Changes
 - `ShapePack` now carries `version`, `gpuLiftedMatrices`, and a signed `gpuArtifactDigest`.
@@ -46,16 +46,36 @@
   - PiCCS verifier recomputation
   - PiRLC cross-term and fold recomputation
   - PiDEC decomposition and reconstructed-commitment checks
-- Hachi PCS now commits to:
-  - `tableCommitment`
-  - `tableDigest`
-  - `merkleRoot`
-  - `codewordLength`
-- Hachi PCS openings now carry:
-  - `codewordIndex`
-  - `codewordValue`
-  - `merkleAuthenticationPath`
-- `SealProof.currentVersion` is now `6`.
+- Direct-packed Hachi PCS now routes `packedChunkCount ∈ {1,2,4}` into a separate opening mode.
+- Direct-packed commitments now carry:
+  - aggregate `tableCommitment`
+  - per-chunk `directPackedOuterCommitments`
+  - `packedChunkCount`
+  - `statementDigest`
+- Direct-packed openings no longer carry verifier-visible reduction artifacts.
+- `ShortLinearWitnessProof` now carries:
+  - `initialBindingCommitment`
+  - `accumulatorRounds`
+  - `finalOpening`
+  - `restartNonce`
+  - `transcriptBinding`
+- Each accumulator round now publishes hiding Ajtai commitments only:
+  - binding image commitments
+  - relation image commitments
+  - evaluation image commitments
+  - outer image commitments
+- The direct-packed final opening now carries masked residual responses over chunk-local `s_j` and `t̂_j`, not witness-length sigma responses.
+- Direct-packed parameter derivation now includes:
+  - image-commitment seeds
+  - binary fold arity
+  - challenge distribution ID
+  - round and final Gaussian mask scales
+  - rejection slack
+  - residual block count per chunk
+  - accumulator and rejection transcript domains
+  - security profile digest
+- `SealProof.currentVersion` is now `8`.
+- `PublicSealProof.currentVersion` is now `3`.
 - Hachi PCS now stages codeword extension and leaf hashing in one command buffer before waiting.
 - PCS benchmarking now reports live CPU/Metal timings plus:
   - threadgroup widths
@@ -75,8 +95,11 @@
 
 ## Validation
 - `swift build`
-- `swift test --filter CryptoHardeningTests`
-- `swift test --filter ApplePQIntegrationTests/testSealProofCodecRejectsVersionMismatch`
+- `swift test --filter HachiPCSVerifierBoundaryTests`
+- `swift test --filter CryptoHardeningTests/testDirectPackedOpeningMetalMatchesCPU`
+- `swift test --filter CryptoHardeningTests/testDirectPackedOpeningSupportsTwoAndFourChunks`
+- `swift test --filter CryptoHardeningTests/testHachiVerifierRejectsCriticalMutations`
+- `swift test --filter CryptoHardeningTests/testHachiPCSCPUAndMetalArtifactsMatch`
 - `Scripts/build_metal_artifacts.sh`
 - `swift run NuMetalQBenchmarks --iterations 1 --warmups 0 --output /tmp/numeq-bench-smoke`
 
@@ -96,12 +119,17 @@
   - PiCCS matrix evaluations
   - PiRLC cross-term commitments
   - PiDEC reconstructed commitments
-- Seal tamper rejection for:
-  - `codewordIndex`
-  - `merkleAuthenticationPath`
+- Direct-packed PCS parity for `packedChunkCount = 1`
+- Direct-packed PCS parity for `packedChunkCount = 2`
+- Direct-packed PCS parity for `packedChunkCount = 4`
+- Direct-packed PCS tamper rejection for:
+  - final residual short responses
+  - initial binding commitment
+  - query point derived schedules
 - Seal proof codec rejection on version mismatch
 - Rotation-matrix equivalence to negacyclic multiplication
 
 ## Remaining Gaps
 - Timed PCS kernels and verifier-stage benchmarks now emit per-dispatch GPU trace artifacts and rolled-up dispatch summaries, but dispatch-boundary counter capture remains unavailable on this host and currently falls back to GPU timeline reporting.
-- End-to-end seal verification now uses a semantic Hachi verifier in both CPU-only and Metal-assisted modes, and benchmark reports surface explicit CPU/Metal verification parity. Metal-assisted verification remains the canonical default path on supported Apple silicon; CPU-only is the validated fallback and reference oracle.
+- The direct-packed prover/verifier now uses the hiding accumulator carrier and transcript-bound rejection acceptance, but Gaussian sampling and rejection still run through host orchestration over existing AG64/Ajtai Metal primitives rather than dedicated protocol-specific kernels.
+- End-to-end seal verification uses a semantic Hachi verifier in both CPU-only and Metal-assisted modes, and benchmark reports surface explicit CPU/Metal verification parity. Metal-assisted verification remains the canonical default path on supported Apple silicon; CPU-only remains the reference oracle for parity and tests.

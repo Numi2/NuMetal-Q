@@ -320,29 +320,158 @@ public struct NuDigestBundle: Sendable, Codable, Equatable {
 
 public struct HachiPCSCommitment: Sendable, Codable, Hashable, Equatable {
     public let oracle: SpartanOracleID
+    public let mode: HachiPCSCommitmentMode
     public let tableCommitment: AjtaiCommitment
+    public let directPackedOuterCommitments: [AjtaiCommitment]
     public let tableDigest: [UInt8]
     public let merkleRoot: [UInt8]
     public let parameterDigest: [UInt8]
     public let valueCount: UInt32
     public let codewordLength: UInt32
+    public let packedChunkCount: UInt32
+    public let statementDigest: [UInt8]
 
     public init(
         oracle: SpartanOracleID,
+        mode: HachiPCSCommitmentMode = .general,
         tableCommitment: AjtaiCommitment,
+        directPackedOuterCommitments: [AjtaiCommitment] = [],
         tableDigest: [UInt8],
         merkleRoot: [UInt8],
         parameterDigest: [UInt8],
         valueCount: UInt32,
-        codewordLength: UInt32
+        codewordLength: UInt32,
+        packedChunkCount: UInt32 = 0,
+        statementDigest: [UInt8] = []
     ) {
         self.oracle = oracle
+        self.mode = mode
         self.tableCommitment = tableCommitment
+        self.directPackedOuterCommitments = directPackedOuterCommitments
         self.tableDigest = tableDigest
         self.merkleRoot = merkleRoot
         self.parameterDigest = parameterDigest
         self.valueCount = valueCount
         self.codewordLength = codewordLength
+        self.packedChunkCount = packedChunkCount
+        self.statementDigest = statementDigest
+    }
+}
+
+public enum HachiPCSCommitmentMode: UInt8, Sendable, Codable, Equatable {
+    case directPacked = 1
+    case general = 2
+}
+
+public enum HachiPCSOpeningMode: UInt8, Sendable, Codable, Equatable {
+    case directPacked = 1
+    case general = 2
+}
+
+public struct ShortLinearWitnessAccumulatorRound: Sendable, Codable, Equatable {
+    public let bindingLeft: AjtaiCommitment
+    public let bindingRight: AjtaiCommitment
+    public let relationLeft: AjtaiCommitment
+    public let relationRight: AjtaiCommitment
+    public let evaluationLeft: AjtaiCommitment
+    public let evaluationRight: AjtaiCommitment
+    public let outerLeft: AjtaiCommitment
+    public let outerRight: AjtaiCommitment
+
+    public init(
+        bindingLeft: AjtaiCommitment,
+        bindingRight: AjtaiCommitment,
+        relationLeft: AjtaiCommitment,
+        relationRight: AjtaiCommitment,
+        evaluationLeft: AjtaiCommitment,
+        evaluationRight: AjtaiCommitment,
+        outerLeft: AjtaiCommitment,
+        outerRight: AjtaiCommitment
+    ) {
+        self.bindingLeft = bindingLeft
+        self.bindingRight = bindingRight
+        self.relationLeft = relationLeft
+        self.relationRight = relationRight
+        self.evaluationLeft = evaluationLeft
+        self.evaluationRight = evaluationRight
+        self.outerLeft = outerLeft
+        self.outerRight = outerRight
+    }
+}
+
+public struct ShortLinearWitnessFinalOpening: Sendable, Codable, Equatable {
+    public let bindingMaskCommitment: AjtaiCommitment
+    public let relationMaskCommitment: AjtaiCommitment
+    public let evaluationMaskCommitment: AjtaiCommitment
+    public let outerMaskCommitment: AjtaiCommitment
+    public let shortResponses: [RingElement]
+    public let outerResponses: [RingElement]
+
+    public init(
+        bindingMaskCommitment: AjtaiCommitment,
+        relationMaskCommitment: AjtaiCommitment,
+        evaluationMaskCommitment: AjtaiCommitment,
+        outerMaskCommitment: AjtaiCommitment,
+        shortResponses: [RingElement],
+        outerResponses: [RingElement]
+    ) {
+        self.bindingMaskCommitment = bindingMaskCommitment
+        self.relationMaskCommitment = relationMaskCommitment
+        self.evaluationMaskCommitment = evaluationMaskCommitment
+        self.outerMaskCommitment = outerMaskCommitment
+        self.shortResponses = shortResponses
+        self.outerResponses = outerResponses
+    }
+}
+
+public struct ShortLinearWitnessProof: Sendable, Codable, Equatable {
+    public let initialBindingCommitment: AjtaiCommitment
+    public let accumulatorRounds: [ShortLinearWitnessAccumulatorRound]
+    public let finalOpening: ShortLinearWitnessFinalOpening
+    public let restartNonce: UInt32
+    public let transcriptBinding: [UInt8]
+
+    public init(
+        initialBindingCommitment: AjtaiCommitment,
+        accumulatorRounds: [ShortLinearWitnessAccumulatorRound],
+        finalOpening: ShortLinearWitnessFinalOpening,
+        restartNonce: UInt32,
+        transcriptBinding: [UInt8]
+    ) {
+        self.initialBindingCommitment = initialBindingCommitment
+        self.accumulatorRounds = accumulatorRounds
+        self.finalOpening = finalOpening
+        self.restartNonce = restartNonce
+        self.transcriptBinding = transcriptBinding
+    }
+}
+
+public struct HachiDirectPackedOpeningProof: Sendable, Codable, Equatable {
+    public let packedChunkCount: UInt32
+    public let relationProof: ShortLinearWitnessProof
+
+    public init(
+        packedChunkCount: UInt32,
+        relationProof: ShortLinearWitnessProof
+    ) {
+        self.packedChunkCount = packedChunkCount
+        self.relationProof = relationProof
+    }
+}
+
+public struct HachiGeneralPCSOpeningProof: Sendable, Codable, Equatable {
+    public let codewordIndex: UInt32
+    public let codewordValue: Fq
+    public let merkleAuthenticationPath: [[UInt8]]
+
+    public init(
+        codewordIndex: UInt32,
+        codewordValue: Fq,
+        merkleAuthenticationPath: [[UInt8]]
+    ) {
+        self.codewordIndex = codewordIndex
+        self.codewordValue = codewordValue
+        self.merkleAuthenticationPath = merkleAuthenticationPath
     }
 }
 
@@ -351,26 +480,40 @@ public struct HachiPCSOpening: Sendable, Codable, Equatable {
     public let evaluation: Fq
     public let scheduleDigest: [UInt8]
     public let evaluationDigest: [UInt8]
-    public let codewordIndex: UInt32
-    public let codewordValue: Fq
-    public let merkleAuthenticationPath: [[UInt8]]
+    public let mode: HachiPCSOpeningMode
+    public let directPacked: HachiDirectPackedOpeningProof?
+    public let general: HachiGeneralPCSOpeningProof?
 
     public init(
         oracle: SpartanOracleID,
         evaluation: Fq,
         scheduleDigest: [UInt8],
         evaluationDigest: [UInt8],
-        codewordIndex: UInt32,
-        codewordValue: Fq,
-        merkleAuthenticationPath: [[UInt8]]
+        directPacked: HachiDirectPackedOpeningProof
     ) {
         self.oracle = oracle
         self.evaluation = evaluation
         self.scheduleDigest = scheduleDigest
         self.evaluationDigest = evaluationDigest
-        self.codewordIndex = codewordIndex
-        self.codewordValue = codewordValue
-        self.merkleAuthenticationPath = merkleAuthenticationPath
+        self.mode = .directPacked
+        self.directPacked = directPacked
+        self.general = nil
+    }
+
+    public init(
+        oracle: SpartanOracleID,
+        evaluation: Fq,
+        scheduleDigest: [UInt8],
+        evaluationDigest: [UInt8],
+        general: HachiGeneralPCSOpeningProof
+    ) {
+        self.oracle = oracle
+        self.evaluation = evaluation
+        self.scheduleDigest = scheduleDigest
+        self.evaluationDigest = evaluationDigest
+        self.mode = .general
+        self.directPacked = nil
+        self.general = general
     }
 }
 
@@ -499,7 +642,7 @@ public struct HachiSealProof: Sendable, Codable, Equatable {
 }
 
 public struct SealProof: Sendable, Codable {
-    public static let currentVersion: UInt16 = 6
+    public static let currentVersion: UInt16 = 8
 
     public let version: UInt16
     public let sealBackendID: String
