@@ -135,7 +135,7 @@ internal struct FoldState: Sendable {
         self.commitment = commitment
         self.accumulatedWitness = accumulatedWitness
         self.publicInputs = publicInputs
-        self.statementCount = max(1, statementCount)
+        self.statementCount = statementCount
         self.normBudget = normBudget
         self.errorTerms = errorTerms
         self.blindingMask = blindingMask

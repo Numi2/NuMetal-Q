@@ -39,7 +39,7 @@ public struct PublicSealStatement: Sendable, Codable, Equatable {
         self.deciderLayoutDigest = deciderLayoutDigest
         self.sealParamDigest = sealParamDigest
         self.publicHeader = publicHeader
-        self.instanceCount = max(1, instanceCount)
+        self.instanceCount = instanceCount
         self.finalAccumulatorCommitment = finalAccumulatorCommitment
         self.publicInputs = publicInputs
         self.relaxationFactor = relaxationFactor

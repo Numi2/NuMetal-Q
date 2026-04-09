@@ -189,8 +189,7 @@ public actor ProofContext {
         guard let state = activeStates[handle.chainID] else {
             throw ProofContextError.handleNotFound
         }
-        try requireAggregateState(state)
-        try await ensureRecursiveStateIntegrity(state)
+        try await prepareStateForSealing(state)
 
         let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
 
@@ -244,8 +243,7 @@ public actor ProofContext {
         guard let state = activeStates[handle.chainID] else {
             throw ProofContextError.handleNotFound
         }
-        try requireAggregateState(state)
-        try await ensureRecursiveStateIntegrity(state)
+        try await prepareStateForSealing(state)
 
         let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
         let sealProof = try await sealBackend.seal(
@@ -301,8 +299,7 @@ public actor ProofContext {
         guard let state = activeStates[handle.chainID] else {
             throw ProofContextError.handleNotFound
         }
-        try requireAggregateState(state)
-        try await ensureRecursiveStateIntegrity(state)
+        try await prepareStateForSealing(state)
         try requireClusterEligibility(for: state, attestation: attestation)
 
         let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
@@ -359,8 +356,7 @@ public actor ProofContext {
         guard let state = activeStates[handle.chainID] else {
             throw ProofContextError.handleNotFound
         }
-        try requireAggregateState(state)
-        try await ensureRecursiveStateIntegrity(state)
+        try await prepareStateForSealing(state)
         try requireClusterEligibility(for: state, attestation: attestation)
 
         let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
@@ -413,6 +409,12 @@ public actor ProofContext {
             provenanceClass: state.maxWitnessClass,
             stageAudit: state.stageAudit
         )
+    }
+
+    private func prepareStateForSealing(_ state: FoldState) async throws {
+        try requireAggregateState(state)
+        try await ensureRecursiveStateIntegrity(state)
+        try requirePersistenceEligibility(for: state)
     }
 
     // MARK: - Resume

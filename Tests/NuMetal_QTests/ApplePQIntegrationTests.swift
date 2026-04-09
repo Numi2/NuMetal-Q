@@ -208,4 +208,106 @@ final class ApplePQIntegrationTests: XCTestCase {
         }
     }
 
+    func testFoldVaultRejectsInvalidRelaxationFactorEncoding() async throws {
+        let storageDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let vault = FoldVault(storageDirectory: storageDirectory)
+        let state = makeVaultTestState(shapeByte: 0x51)
+
+        var serialized = try await vault.serializeStateForTesting(state)
+        let offsets = vaultStateFieldOffsets(for: state)
+        serialized.replaceSubrange(
+            offsets.relaxation..<offsets.relaxation + MemoryLayout<UInt64>.size,
+            with: Data(repeating: 0xFF, count: MemoryLayout<UInt64>.size)
+        )
+
+        do {
+            _ = try await vault.deserializeStateForTesting(serialized)
+            XCTFail("Expected invalid relaxation factor encoding to be rejected")
+        } catch let error as VaultError {
+            XCTAssertEqual(error, .corruptedData)
+        }
+    }
+
+    func testFoldVaultRejectsZeroStatementCountEncoding() async throws {
+        let storageDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let vault = FoldVault(storageDirectory: storageDirectory)
+        let state = makeVaultTestState(shapeByte: 0x61)
+
+        var serialized = try await vault.serializeStateForTesting(state)
+        let offsets = vaultStateFieldOffsets(for: state)
+        serialized.replaceSubrange(
+            offsets.statementCount..<offsets.statementCount + MemoryLayout<UInt32>.size,
+            with: Data(repeating: 0x00, count: MemoryLayout<UInt32>.size)
+        )
+
+        do {
+            _ = try await vault.deserializeStateForTesting(serialized)
+            XCTFail("Expected zero statement count encoding to be rejected")
+        } catch let error as VaultError {
+            XCTAssertEqual(error, .corruptedData)
+        }
+    }
+
+    func testFoldVaultDeletePropagatesFilesystemFailure() async throws {
+        let storageDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let vault = FoldVault(storageDirectory: storageDirectory)
+        let state = makeVaultTestState(shapeByte: 0x71)
+
+        try await vault.unlock(with: Data("NuMetalQ.Vault.DeleteFailure".utf8))
+        try await vault.store(state)
+
+        let fileURL = storageDirectory.appendingPathComponent("\(state.chainID.uuidString).vault")
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o500],
+            ofItemAtPath: storageDirectory.path
+        )
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: storageDirectory.path
+            )
+        }
+
+        do {
+            try await vault.delete(chainID: state.chainID)
+            XCTFail("Expected delete to propagate filesystem failures")
+        } catch {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+        }
+    }
+
+}
+
+private func makeVaultTestState(shapeByte: UInt8) -> FoldState {
+    FoldState(
+        shapeDigest: ShapeDigest(bytes: [UInt8](repeating: shapeByte, count: 32)),
+        commitment: AjtaiCommitment(value: RingElement(constant: Fq(9))),
+        witness: [RingElement(constant: Fq(7))],
+        publicInputs: [Fq(2), Fq(3)],
+        normBudget: NormBudget(bound: 8, decompBase: 2, decompLimbs: 3),
+        maxWitnessClass: .public
+    )
+}
+
+private func vaultStateFieldOffsets(for state: FoldState) -> (statementCount: Int, relaxation: Int) {
+    let ringByteCount = RingElement.degree * MemoryLayout<UInt64>.size
+    var offset = Data("NuMeQFv6".utf8).count
+    offset += 16 // chainID
+    offset += MemoryLayout<UInt64>.size // epoch
+    offset += 32 // shape digest
+    offset += ringByteCount // commitment
+    offset += MemoryLayout<UInt32>.size // witness count
+    offset += state.accumulatedWitness.count * ringByteCount
+    offset += MemoryLayout<UInt32>.size // public input count
+    offset += state.publicInputs.count * MemoryLayout<UInt64>.size
+    offset += MemoryLayout<UInt8>.size // kind
+
+    let statementCountOffset = offset
+    offset += MemoryLayout<UInt32>.size
+    let relaxationOffset = offset
+
+    return (statementCount: statementCountOffset, relaxation: relaxationOffset)
 }

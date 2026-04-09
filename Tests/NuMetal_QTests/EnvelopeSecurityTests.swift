@@ -2,6 +2,52 @@ import XCTest
 @testable import NuMetal_Q
 
 final class EnvelopeSecurityTests: XCTestCase {
+    func testSealRejectsEphemeralDerivedWitnessPersistence() async throws {
+        let engine = try await AcceptanceSupport.makeEngine()
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "EphemeralSealPersistence")
+        let policy = NuPolicy(
+            laneClasses: ["amounts": .ephemeralDerived],
+            defaultClass: .syncableEncrypted,
+            clusterDelegationAllowed: true,
+            maxDelegatableClass: .syncableEncrypted
+        )
+        let context = await engine.createContext(
+            compiledShape: compiledShape,
+            policy: policy,
+            appID: "NuMetalQ.Tests.EphemeralSeal"
+        )
+        let handle = try await context.seed(
+            witness: AcceptanceSupport.makeWitness(seed: 13),
+            publicInputs: [Fq(5), Fq(9)]
+        )
+
+        do {
+            _ = try await context.seal(
+                handle,
+                sessionKey: AcceptanceSupport.makeSessionKey(),
+                signerKeyID: Data("test-signer".utf8),
+                signEnvelope: AcceptanceSupport.signer
+            )
+            XCTFail("Expected ephemeral witness state to be rejected for persistence")
+        } catch let error as ProofContextError {
+            guard case let .policyViolation(violation) = error else {
+                return XCTFail("Unexpected proof context error: \(error)")
+            }
+            XCTAssertEqual(violation.kind, .ephemeralCannotPersist)
+        }
+    }
+
+    func testSealProofCodecRejectsZeroInstanceStatement() throws {
+        let serialized = try SealProofCodec.serialize(makeMinimalPublicSealProof(instanceCount: 0))
+
+        XCTAssertThrowsError(try SealProofCodec.deserialize(serialized)) { error in
+            guard let codecError = error as? BinaryReader.Error,
+                  case .invalidData = codecError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
     func testPublicStatementBindingRejectsMismatchedHeaderEncoding() throws {
         let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "HeaderBindingMismatch")
         let mismatchedHeader = Data([1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0])
@@ -123,4 +169,53 @@ final class EnvelopeSecurityTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+}
+
+private func makeMinimalPublicSealProof(instanceCount: UInt32) -> PublicSealProof {
+    let commitment = HachiPCSCommitment(
+        oracle: .witness(),
+        tableCommitment: AjtaiCommitment(value: .zero),
+        tableDigest: [],
+        merkleRoot: [],
+        parameterDigest: [],
+        valueCount: 0,
+        codewordLength: 0
+    )
+    let openingProof = HachiPCSBatchOpeningProof(batchSeedDigest: [], classes: [])
+    let terminalProof = HachiTerminalProof(
+        witnessCommitment: commitment,
+        matrixEvaluationCommitments: [],
+        blindingCommitments: SpartanBlindingCommitments(
+            witness: commitment,
+            matrixRows: []
+        ),
+        outerSumcheck: SpartanSumcheckProof(roundEvaluations: []),
+        innerSumcheck: SpartanSumcheckProof(roundEvaluations: []),
+        claimedEvaluations: SpartanClaimedEvaluations(
+            rowPoint: [],
+            columnPoint: [],
+            matrixRowEvaluations: [],
+            witnessEvaluation: .zero
+        ),
+        blindingEvaluations: SpartanBlindingEvaluations(
+            matrixRows: [],
+            witness: .zero
+        ),
+        pcsOpeningProof: openingProof,
+        blindingOpeningProof: openingProof
+    )
+    let statement = PublicSealStatement(
+        backendID: NuSealConstants.productionBackendID,
+        sealTranscriptID: NuSealConstants.sealTranscriptID,
+        shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 0x11, count: 32)),
+        deciderLayoutDigest: [],
+        sealParamDigest: [],
+        publicHeader: Data(),
+        instanceCount: instanceCount,
+        finalAccumulatorCommitment: AjtaiCommitment(value: .zero),
+        publicInputs: [],
+        relaxationFactor: .one,
+        errorTerms: []
+    )
+    return PublicSealProof(statement: statement, terminalProof: terminalProof)
 }

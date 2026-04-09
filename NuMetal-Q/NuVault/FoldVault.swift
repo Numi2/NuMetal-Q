@@ -130,9 +130,14 @@ public actor FoldVault {
 
     /// Delete a vault entry.
     public func delete(chainID: UUID) throws {
-        cache.removeValue(forKey: chainID)
         let fileURL = storageURL.appendingPathComponent("\(chainID.uuidString).vault")
-        try? FileManager.default.removeItem(at: fileURL)
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+        } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError {
+            // Missing files are already effectively deleted.
+        }
+        cache.removeValue(forKey: chainID)
     }
 
     /// List all stored chain IDs.
@@ -377,11 +382,16 @@ public actor FoldVault {
             offset: &offset,
             as: UInt32.self
         )
+        guard statementCount > 0 else {
+            throw VaultError.corruptedData
+        }
 
         guard offset + 8 <= slice.count else { throw VaultError.corruptedData }
         let relaxBytes = Array(slice[offset..<offset + 8])
         offset += 8
-        let relaxation = Fq.fromBytes(relaxBytes) ?? .one
+        guard let relaxation = Fq.fromBytes(relaxBytes) else {
+            throw VaultError.corruptedData
+        }
 
         guard offset + 8 + 8 + 4 + 1 + 1 <= slice.count else { throw VaultError.corruptedData }
         let nbBound = try Self.readFixedWidthInteger(from: slice, offset: &offset, as: UInt64.self)

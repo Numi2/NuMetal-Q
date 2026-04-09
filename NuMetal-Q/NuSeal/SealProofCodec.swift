@@ -76,7 +76,7 @@ public enum SealProofCodec {
     }
 
     private static func decodeStatement(from reader: inout BinaryReader) throws -> PublicSealStatement {
-        PublicSealStatement(
+        let statement = PublicSealStatement(
             backendID: try decodeString(from: &reader),
             sealTranscriptID: try decodeString(from: &reader),
             shapeDigest: try decodeShapeDigest(from: &reader),
@@ -89,6 +89,10 @@ public enum SealProofCodec {
             relaxationFactor: try decodeFq(from: &reader),
             errorTerms: try decodeRingArray(from: &reader)
         )
+        guard statement.instanceCount > 0 else {
+            throw BinaryReader.Error.invalidData
+        }
+        return statement
     }
 
     private static func encode(_ proof: HachiTerminalProof, into writer: inout BinaryWriter) {
