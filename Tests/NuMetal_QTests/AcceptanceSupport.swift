@@ -18,8 +18,9 @@ enum AcceptanceSupport {
         return expected == signature
     }
 
-    static let attestationVerifier: AttestationVerifier = { attestation, _ in
-        !attestation.isEmpty
+    static let attestationVerifier: AttestationVerifier = { attestation, context in
+        let decoded = try JSONDecoder().decode(TestAttestation.self, from: attestation)
+        return decoded == TestAttestation(context: context)
     }
 
     static func makeCompiledShape(name: String = "AcceptanceShape") throws -> CompiledShape {
@@ -33,6 +34,34 @@ enum AcceptanceSupport {
             ],
             gates: [
                 CCSGate(coefficient: .zero, matrixIndices: [0]),
+            ]
+        )
+
+        return try makeCompiledShape(
+            name: name,
+            relation: relation,
+            lanes: [lane],
+            publicHeaderSize: 16
+        )
+    }
+
+    static func makeConstrainedCompiledShape(name: String = "ConstrainedAcceptanceShape") throws -> CompiledShape {
+        let lane = LaneDescriptor(index: 0, name: "amounts", width: .u16, length: 64)
+        let relation = CCSRelation(
+            m: 1,
+            n: 66,
+            nPublic: 2,
+            matrices: [
+                SparseMatrix(
+                    rows: 1,
+                    cols: 66,
+                    rowPtr: [0, 2],
+                    colIdx: [0, 2],
+                    values: [.one, Fq(raw: Fq.modulus &- 1)]
+                )
+            ],
+            gates: [
+                CCSGate(coefficient: .one, matrixIndices: [0]),
             ]
         )
 
@@ -246,79 +275,69 @@ enum AcceptanceSupport {
         return lanes
     }
 
-    static func makeDummyTerminalProof() -> HachiTerminalProof {
-        let params = NuParams.derive(from: .canonical)
-        let witnessCommitment = HachiPCSCommitment(
-            oracle: .witness(),
-            tableCommitment: AjtaiCommitment(value: .zero),
-            tableDigest: [UInt8](repeating: 0x89, count: 32),
-            merkleRoot: [UInt8](repeating: 0x8B, count: 32),
-            parameterDigest: params.seal.parameterDigest,
-            valueCount: 8,
-            codewordLength: 32
-        )
-        let blindingCommitments = SpartanBlindingCommitments(
-            witness: HachiPCSCommitment(
-                oracle: .witness(),
-                tableCommitment: AjtaiCommitment(value: RingElement(constant: .one)),
-                tableDigest: [UInt8](repeating: 0x8C, count: 32),
-                merkleRoot: [UInt8](repeating: 0x8D, count: 32),
-                parameterDigest: params.seal.parameterDigest,
-                valueCount: 8,
-                codewordLength: 32
-            ),
-            matrixRows: []
-        )
-        return HachiTerminalProof(
-            witnessCommitment: HachiPCSCommitment(
-                oracle: witnessCommitment.oracle,
-                tableCommitment: witnessCommitment.tableCommitment,
-                tableDigest: witnessCommitment.tableDigest,
-                merkleRoot: witnessCommitment.merkleRoot,
-                parameterDigest: witnessCommitment.parameterDigest,
-                valueCount: witnessCommitment.valueCount,
-                codewordLength: witnessCommitment.codewordLength
-            ),
-            matrixEvaluationCommitments: [],
-            blindingCommitments: blindingCommitments,
-            outerSumcheck: SpartanSumcheckProof(roundEvaluations: []),
-            innerSumcheck: SpartanSumcheckProof(roundEvaluations: []),
-            claimedEvaluations: SpartanClaimedEvaluations(
-                rowPoint: [],
-                columnPoint: [],
-                matrixRowEvaluations: [],
-                witnessEvaluation: .zero
-            ),
-            blindingEvaluations: SpartanBlindingEvaluations(matrixRows: [], witness: .zero),
-            pcsOpeningProof: HachiPCSBatchOpeningProof(
-                batchSeedDigest: [UInt8](repeating: 0xAA, count: 32),
-                classes: []
-            ),
-            blindingOpeningProof: HachiPCSBatchOpeningProof(
-                batchSeedDigest: [UInt8](repeating: 0xAB, count: 32),
-                classes: []
+    static func makeVerificationAttestation(for envelope: ProofEnvelope) throws -> Data {
+        try makeAttestation(
+            context: AttestationContext(
+                purpose: .envelopeVerification,
+                appID: envelope.appID,
+                shapeDigest: envelope.shapeDigest,
+                signerKeyID: envelope.signerKeyID,
+                timestamp: envelope.timestamp,
+                payloadDigest: NuSecurityDigest.sha256(envelope.attestationBindingPayload())
             )
         )
     }
 
-    static func makeDummySealProof() -> PublicSealProof {
-        let params = NuParams.derive(from: .canonical)
-        let statement = PublicSealStatement(
-            backendID: NuSealConstants.productionBackendID,
-            sealTranscriptID: NuSealConstants.sealTranscriptID,
-            shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 0xAB, count: 32)),
-            deciderLayoutDigest: [UInt8](repeating: 0x55, count: 32),
-            sealParamDigest: params.seal.parameterDigest,
-            publicHeader: Data("NuMetalQ.Dummy.Header".utf8),
-            instanceCount: 1,
-            finalAccumulatorCommitment: AjtaiCommitment(value: .zero),
-            publicInputs: [],
-            relaxationFactor: .one,
-            errorTerms: []
+    static func makeAttestation(context: AttestationContext) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(TestAttestation(context: context))
+    }
+
+    static func makeSyntheticEnvelope(
+        compiledShape: CompiledShape,
+        appID: String = "NuMetalQ.Tests",
+        teamID: String = "NuMetalQ",
+        signerKeyID: Data = Data("test-signer".utf8),
+        proofBytes: Data = Data([0x01]),
+        attestation: Data? = nil,
+        timestamp: Date = Date(timeIntervalSince1970: 1_720_000_000)
+    ) throws -> ProofEnvelope {
+        let publicHeaderBytes = Data(repeating: 0, count: compiledShape.shape.publicHeaderSize)
+        let unsigned = ProofEnvelope(
+            version: ProofEnvelope.currentVersion,
+            profileID: NuProfile.canonical.profileID,
+            appID: appID,
+            teamID: teamID,
+            shapeDigest: compiledShape.shape.digest,
+            publicHeaderDigest: NuSecurityDigest.sha256(publicHeaderBytes),
+            publicHeaderBytes: publicHeaderBytes,
+            sealBackendID: NuSealConstants.productionBackendID,
+            sealParamDigest: Data(NuParams.derive(from: .canonical).seal.parameterDigest),
+            privacyMode: .fullZK,
+            proofBytes: proofBytes,
+            signerKeyID: signerKeyID,
+            signature: Data(),
+            attestation: attestation,
+            timestamp: timestamp
         )
-        return PublicSealProof(
-            statement: statement,
-            terminalProof: makeDummyTerminalProof()
+
+        return ProofEnvelope(
+            version: unsigned.version,
+            profileID: unsigned.profileID,
+            appID: unsigned.appID,
+            teamID: unsigned.teamID,
+            shapeDigest: unsigned.shapeDigest,
+            publicHeaderDigest: unsigned.publicHeaderDigest,
+            publicHeaderBytes: unsigned.publicHeaderBytes,
+            sealBackendID: unsigned.sealBackendID,
+            sealParamDigest: unsigned.sealParamDigest,
+            privacyMode: unsigned.privacyMode,
+            proofBytes: unsigned.proofBytes,
+            signerKeyID: unsigned.signerKeyID,
+            signature: try signer(unsigned.signingPayload()),
+            attestation: unsigned.attestation,
+            timestamp: unsigned.timestamp
         )
     }
 
@@ -373,5 +392,31 @@ enum AcceptanceSupport {
             attestation: unsigned.attestation,
             timestamp: unsigned.timestamp
         )
+    }
+}
+
+private struct TestAttestation: Codable, Equatable {
+    let purpose: String
+    let appID: String?
+    let localDeviceID: UUID?
+    let remoteDeviceID: UUID?
+    let sessionID: UUID?
+    let messageID: UUID?
+    let shapeDigest: [UInt8]?
+    let signerKeyID: Data?
+    let timestampBits: UInt64
+    let payloadDigest: Data
+
+    init(context: AttestationContext) {
+        self.purpose = context.purpose.rawValue
+        self.appID = context.appID
+        self.localDeviceID = context.localDeviceID
+        self.remoteDeviceID = context.remoteDeviceID
+        self.sessionID = context.sessionID
+        self.messageID = context.messageID
+        self.shapeDigest = context.shapeDigest?.bytes
+        self.signerKeyID = context.signerKeyID
+        self.timestampBits = context.timestamp.timeIntervalSince1970.bitPattern
+        self.payloadDigest = context.payloadDigest
     }
 }

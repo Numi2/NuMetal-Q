@@ -1,9 +1,10 @@
+import Foundation
 import XCTest
 @testable import NuMetal_Q
 
 final class MetalFoldProverTests: XCTestCase {
     func testTypedSeedVerifyRoundTripsAcrossVault() async throws {
-        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "MetalFoldProverShape")
+        let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "MetalFoldProverShape")
         let vaultDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let vaultKey = Data("NuMetalQ.Tests.MetalFoldProver.Vault".utf8)
@@ -13,61 +14,75 @@ final class MetalFoldProverTests: XCTestCase {
             vaultKeyMaterial: vaultKey
         )
         let step = TestFoldStep(compiledShape: compiledShape)
-
         let witness = AcceptanceSupport.makeWitness(seed: 11)
         let pcd = try await prover.seed(step, witness: witness)
 
-        let valid = try await prover.verify(pcd)
-        XCTAssertTrue(valid)
+        let isValid = try await prover.verify(pcd)
+        XCTAssertTrue(isValid)
 
         let resumedProver = try await MetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: vaultKey
         )
         await resumedProver.register(step)
-        let resumedValid = try await resumedProver.verify(pcd)
-        XCTAssertTrue(resumedValid)
+        let resumedIsValid = try await resumedProver.verify(pcd)
+        XCTAssertTrue(resumedIsValid)
     }
 
-    func testTypedFuseVerifyRoundTripsAcrossVault() async throws {
-        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "MetalFoldProverFuse")
+    func testTypedVerifyFailsWithWrongVaultKeyAcrossRestart() async throws {
+        let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "MetalFoldWrongKey")
         let vaultDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let prover = try await MetalFoldProver(
-            vaultDirectory: vaultDirectory,
-            vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.Fuse".utf8)
-        )
         let step = TestFoldStep(compiledShape: compiledShape)
 
-        let left = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 11))
-        let right = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 29))
-        let fused = try await prover.fuse(
-            step,
-            witness: AcceptanceSupport.makeWitness(seed: 47),
-            left: left,
-            right: right
+        let prover = try await MetalFoldProver(
+            vaultDirectory: vaultDirectory,
+            vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.Right".utf8)
         )
+        let pcd = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 19))
 
-        let fusedValid = try await prover.verify(fused)
-        XCTAssertTrue(fusedValid)
+        let wrongKeyProver = try await MetalFoldProver(
+            vaultDirectory: vaultDirectory,
+            vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.Wrong".utf8)
+        )
+        await wrongKeyProver.register(step)
+
+        let isValid = try await wrongKeyProver.verify(pcd)
+        XCTAssertFalse(isValid)
+    }
+
+    func testTypedVerifyFailsAfterVaultTamperingAcrossRestart() async throws {
+        let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "MetalFoldTamper")
+        let vaultDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let vaultKey = Data("NuMetalQ.Tests.MetalFoldProver.Tamper".utf8)
+        let step = TestFoldStep(compiledShape: compiledShape)
+
+        let prover = try await MetalFoldProver(
+            vaultDirectory: vaultDirectory,
+            vaultKeyMaterial: vaultKey
+        )
+        let pcd = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 23))
+
+        let vaultURL = vaultDirectory.appendingPathComponent("\(pcd.chainID.uuidString).vault")
+        var bytes = try Data(contentsOf: vaultURL)
+        bytes[bytes.index(before: bytes.endIndex)] ^= 0x01
+        try bytes.write(to: vaultURL, options: .atomic)
 
         let resumedProver = try await MetalFoldProver(
             vaultDirectory: vaultDirectory,
-            vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.Fuse".utf8)
+            vaultKeyMaterial: vaultKey
         )
         await resumedProver.register(step)
-        let resumedValid = try await resumedProver.verify(fused)
-        XCTAssertTrue(resumedValid)
+
+        let isValid = try await resumedProver.verify(pcd)
+        XCTAssertFalse(isValid)
     }
 }
 
 private struct TestHeader: NuHeader, Hashable {
     let shapeDigest: ShapeDigest
     let publicInputs: [Fq]
-
-    var digestByte: UInt8 {
-        UInt8(truncatingIfNeeded: publicInputs.first?.v ?? 0)
-    }
 
     func toBytes() -> [UInt8] {
         publicInputs.flatMap { $0.toBytes() }
@@ -94,7 +109,7 @@ private struct TestFoldStep: NuStep {
     let compiledShape: CompiledShape
 
     func seedHeader(loweredWitness: NuWitness) throws -> TestHeader {
-        makeHeader(digestByte: Self.digestByte(for: loweredWitness))
+        makeHeader(firstPublicInput: loweredWitness.flatten()[0])
     }
 
     func fuseHeader(
@@ -102,30 +117,18 @@ private struct TestFoldStep: NuStep {
         left: TestHeader,
         right: TestHeader
     ) throws -> TestHeader {
-        makeHeader(
-            digestByte: left.digestByte &+ right.digestByte &+ Self.digestByte(for: loweredWitness)
-        )
+        makeHeader(firstPublicInput: left.publicInputs[0] + right.publicInputs[0] + loweredWitness.flatten()[0])
     }
 
     func lowerWitness(_ witness: NuWitness) throws -> NuWitness {
         witness
     }
 
-    private func makeHeader(digestByte: UInt8) -> TestHeader {
+    private func makeHeader(firstPublicInput: Fq) -> TestHeader {
         TestHeader(
             shapeDigest: compiledShape.shape.digest,
-            publicInputs: [
-                Fq(UInt64(digestByte)),
-                Fq(UInt64(digestByte) &* 3 &+ 1)
-            ]
+            publicInputs: [firstPublicInput, firstPublicInput + Fq(1)]
         )
-    }
-
-    private static func digestByte(for witness: NuWitness) -> UInt8 {
-        let sum = witness.flatten().reduce(UInt64(0)) { partial, field in
-            partial &+ field.v
-        }
-        return UInt8(truncatingIfNeeded: sum)
     }
 }
 

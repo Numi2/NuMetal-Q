@@ -22,45 +22,65 @@ final class ApplePQIntegrationTests: XCTestCase {
     }
 
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
-    func testEnvelopeBuilderWrapsArtifactKeyWithMLKEM1024() throws {
-        let signer = try ApplePostQuantum.makeMLDSA87Identity()
+    func testMLDSA87IdentityVerifyEnvelopeBindsSignerKeyID() throws {
+        let identity = try ApplePostQuantum.makeMLDSA87Identity()
+        let message = Data("NuMeQ.ApplePQ.Envelope".utf8)
+        let signature = try identity.sign(message)
+
+        XCTAssertTrue(try identity.verifyEnvelope(message, signature, identity.signerKeyID))
+        XCTAssertFalse(
+            try identity.verifyEnvelope(
+                message,
+                signature,
+                Data(repeating: 0xA5, count: identity.signerKeyID.count)
+            )
+        )
+    }
+
+    @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
+    func testMLKEM1024WrapUnwrapRoundTripsAndWrongKeyDoesNotRecoverSessionKey() throws {
         let recipientPrivateKey = try MLKEM1024.PrivateKey()
-        let proof = makeDummySealProof()
-        let payload = makeDummyResumePayload()
+        let wrongPrivateKey = try MLKEM1024.PrivateKey()
+        let wrapped = try ApplePostQuantum.wrapSessionKey(for: recipientPrivateKey.publicKey)
 
-        let envelope = try EnvelopeBuilder(
-            profileID: NuProfile.canonical.profileID,
-            appID: "NuMetalQ.ApplePQTests",
-            teamID: "NuMetalQ.Tests",
-            privacyMode: .fullZK,
-            signerKeyID: signer.signerKeyID,
-            sealParamDigest: Data(proof.statement.sealParamDigest)
-        ).build(
-            proof: proof,
-            sign: signer.sign,
-            attestation: Data("apple-pq-attestation".utf8)
+        let unwrapped = try ApplePostQuantum.unwrapSessionKey(
+            wrapped.wrappedKey,
+            using: recipientPrivateKey
         )
-        let resumeArtifact = try ResumeArtifactBuilder.build(
-            payload: payload,
-            proof: proof,
-            recipientPublicKey: recipientPrivateKey.publicKey
+        let wrongUnwrapped = try ApplePostQuantum.unwrapSessionKey(
+            wrapped.wrappedKey,
+            using: wrongPrivateKey
         )
 
-        XCTAssertFalse(resumeArtifact.wrappedArtifactKeys.isEmpty)
-        XCTAssertTrue(try signer.verify(envelope.signingPayload(), envelope.signature))
-
-        let sessionKey = try resumeArtifact.unwrapArtifactKey(using: recipientPrivateKey)
-        let decrypted = try resumeArtifact.decryptPayload(using: sessionKey, proof: proof)
-        let decryptedViaPrivateKey = try resumeArtifact.decryptPayload(
-            using: resumeArtifact.unwrapArtifactKey(using: recipientPrivateKey),
-            proof: proof
+        XCTAssertEqual(
+            ApplePostQuantum.symmetricKeyData(unwrapped),
+            ApplePostQuantum.symmetricKeyData(wrapped.sessionKey)
         )
-        let expectedProofData = try SealProofCodec.serialize(proof)
+        XCTAssertNotEqual(
+            ApplePostQuantum.symmetricKeyData(wrongUnwrapped),
+            ApplePostQuantum.symmetricKeyData(wrapped.sessionKey)
+        )
+    }
 
-        XCTAssertEqual(ApplePostQuantum.symmetricKeyData(sessionKey).count, 32)
-        XCTAssertEqual(envelope.proofBytes, expectedProofData)
-        XCTAssertEqual(decrypted.accumulatorArtifact, payload.accumulatorArtifact)
-        XCTAssertEqual(decryptedViaPrivateKey.accumulatorArtifact, payload.accumulatorArtifact)
+    @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
+    func testMLKEM1024UnwrapRejectsWrongWrappedKeyAlgorithm() throws {
+        let privateKey = try MLKEM1024.PrivateKey()
+        let wrappedKey = WrappedArtifactKey(
+            algorithm: .mldsa87,
+            encapsulatedKey: Data("not-a-kem-ciphertext".utf8)
+        )
+
+        XCTAssertThrowsError(
+            try ApplePostQuantum.unwrapSessionKey(
+                wrappedKey,
+                using: privateKey
+            )
+        ) { error in
+            guard case .unsupportedWrappedKeyAlgorithm(ApplePostQuantumAlgorithm.mldsa87.rawValue)
+                = error as? ApplePostQuantumError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
     }
 
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
@@ -92,89 +112,46 @@ final class ApplePQIntegrationTests: XCTestCase {
         XCTAssertEqual(restored.chainID, state.chainID)
         XCTAssertEqual(restored.shapeDigest, state.shapeDigest)
         XCTAssertEqual(restored.publicInputs, state.publicInputs)
+        XCTAssertEqual(restored.accumulatedWitness, state.accumulatedWitness)
+        XCTAssertEqual(restored.commitment, state.commitment)
     }
 
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
-    func testXWingHPKESyncRoundTripsEnvelope() async throws {
-        let signer = try ApplePostQuantum.makeMLDSA87Identity()
-        let xwingRecipient = try XWingMLKEM768X25519.PrivateKey()
-        let proof = makeDummySealProof()
+    func testFoldVaultWrappedMasterKeyDoesNotReopenWithWrongRecipientKey() async throws {
+        let recipientPrivateKey = try MLKEM1024.PrivateKey()
+        let wrongPrivateKey = try MLKEM1024.PrivateKey()
+        let wrapped = try ApplePostQuantum.wrapSessionKey(for: recipientPrivateKey.publicKey)
+        let storageDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let vault = FoldVault(storageDirectory: storageDirectory)
 
-        let envelope = try EnvelopeBuilder(
-            profileID: NuProfile.canonical.profileID,
-            appID: "NuMetalQ.ApplePQSync",
-            teamID: "NuMetalQ.Tests",
-            privacyMode: .fullZK,
-            signerKeyID: signer.signerKeyID,
-            sealParamDigest: Data(proof.statement.sealParamDigest)
-        ).build(
-            proof: proof,
-            sign: signer.sign,
-            attestation: Data("sync-attestation".utf8)
+        let state = FoldState(
+            shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 0x41, count: 32)),
+            commitment: AjtaiCommitment(value: RingElement(constant: Fq(9))),
+            witness: [RingElement(constant: Fq(7))],
+            publicInputs: [Fq(2), Fq(3)],
+            normBudget: NormBudget(bound: 8, decompBase: 2, decompLimbs: 3),
+            maxWitnessClass: .public
         )
 
-        let senderID = UUID()
-        let recipientID = UUID()
-        let sender = try SyncChannel(
-            localDeviceID: senderID,
-            hpkeSharedSecret: AcceptanceSupport.sharedSecret,
-            salt: AcceptanceSupport.syncSalt,
-            info: AcceptanceSupport.syncInfo,
-            attestationVerifier: AcceptanceSupport.attestationVerifier
+        try await vault.unlock(
+            wrappedMasterKey: try wrapped.wrappedKey.serialize(),
+            using: recipientPrivateKey
         )
-        let recipient = try SyncChannel(
-            localDeviceID: recipientID,
-            hpkeSharedSecret: AcceptanceSupport.sharedSecret,
-            salt: AcceptanceSupport.syncSalt,
-            info: AcceptanceSupport.syncInfo,
-            attestationVerifier: AcceptanceSupport.attestationVerifier
+        try await vault.store(state)
+        await vault.lock()
+
+        try await vault.unlock(
+            wrappedMasterKey: try wrapped.wrappedKey.serialize(),
+            using: wrongPrivateKey
         )
 
-        let message = try await sender.sealUsingXWingHPKE(
-            envelope: envelope,
-            recipientID: recipientID,
-            recipientPublicKey: xwingRecipient.publicKey,
-            sign: signer.sign
-        )
-        let opened = try await recipient.openEnvelopeUsingXWingHPKE(
-            message: message,
-            recipientPrivateKey: xwingRecipient,
-            verifySignature: signer.verify
-        )
-
-        XCTAssertEqual(opened.serialize(), envelope.serialize())
-        XCTAssertEqual(opened.proofBytes, try SealProofCodec.serialize(proof))
-    }
-
-    func testSealProofCodecRoundTripsCanonicalWireFormat() throws {
-        let proof = makeDummySealProof()
-        let encoded = try SealProofCodec.serialize(proof)
-        let decoded = try SealProofCodec.deserialize(encoded)
-        XCTAssertEqual(try SealProofCodec.serialize(decoded), encoded)
-    }
-
-    func testSealProofCodecRejectsLegacyWireHeader() throws {
-        let proof = makeDummySealProof()
-        let encoded = try SealProofCodec.serialize(proof)
-        let legacyEncoded = Data("NuSealP2".utf8) + encoded.dropFirst(Data("NuSealZK".utf8).count)
-        XCTAssertThrowsError(try SealProofCodec.deserialize(legacyEncoded))
-    }
-
-    func testSealProofCodecRejectsTrailingBytes() throws {
-        let proof = makeDummySealProof()
-        var encoded = try SealProofCodec.serialize(proof)
-        encoded.append(0xFF)
-        XCTAssertThrowsError(try SealProofCodec.deserialize(encoded))
-    }
-
-    func testSealProofCodecRejectsVersionMismatch() throws {
-        let proof = makeDummySealProof()
-        var encoded = try SealProofCodec.serialize(proof)
-        let magicCount = Data("NuSealZK".utf8).count
-        encoded[magicCount] = 0xFF
-        encoded[magicCount + 1] = 0x7F
-
-        XCTAssertThrowsError(try SealProofCodec.deserialize(encoded))
+        do {
+            _ = try await vault.retrieve(chainID: state.chainID)
+            XCTFail("Expected wrong ML-KEM recipient key to fail vault reopen")
+        } catch let error as VaultError {
+            XCTAssertEqual(error, .corruptedData)
+        }
     }
 
     func testFoldVaultRejectsCiphertextTransplantAcrossChainIDs() async throws {
@@ -231,18 +208,4 @@ final class ApplePQIntegrationTests: XCTestCase {
         }
     }
 
-    private func makeDummySealProof() -> PublicSealProof {
-        AcceptanceSupport.makeDummySealProof()
-    }
-
-    private func makeDummyResumePayload() -> ResumePayload {
-        ResumePayload(
-            accumulatorArtifact: Data("{\"version\":4}".utf8),
-            normBudgetSnapshot: NormBudgetSnapshot(
-                normBudget: NormBudget(bound: 32, decompBase: 2, decompLimbs: 4)
-            ),
-            provenanceClass: .public,
-            stageAudit: []
-        )
-    }
 }

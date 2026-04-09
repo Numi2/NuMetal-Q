@@ -16,12 +16,12 @@ final class ClusterWorkPacketTests: XCTestCase {
         let principal = await engine.startClusterAsPrincipal(
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
-            attestationVerifier: AcceptanceSupport.attestationVerifier
+            attestationVerifier: nonEmptyAttestationVerifier
         )
         let coProver = await engine.startClusterAsCoProver(
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
-            attestationVerifier: AcceptanceSupport.attestationVerifier
+            attestationVerifier: nonEmptyAttestationVerifier
         )
         try await coProver.installWorkExecutor(await engine.clusterWorkExecutor())
 
@@ -92,13 +92,13 @@ final class ClusterWorkPacketTests: XCTestCase {
             role: .principal,
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
-            attestationVerifier: AcceptanceSupport.attestationVerifier
+            attestationVerifier: nonEmptyAttestationVerifier
         )
         let coProver = ClusterSession(
             role: .coProver,
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
-            attestationVerifier: AcceptanceSupport.attestationVerifier
+            attestationVerifier: nonEmptyAttestationVerifier
         )
         try await coProver.installWorkExecutor(ClusterWorkExecutor.standard())
 
@@ -136,18 +136,67 @@ final class ClusterWorkPacketTests: XCTestCase {
         XCTAssertEqual(decomposeResult.limbCommitments.count, Int(packet.decompLimbs))
     }
 
+    func testFoldWorkResultRejectsTamperedLaneCommitment() async throws {
+        let lane = WitnessLane(
+            descriptor: LaneDescriptor(index: 0, name: "lane", width: .u8, length: 4),
+            values: [Fq(1), Fq(2), Fq(3), Fq(4)]
+        )
+        let packet = ClusterFoldWorkPacket(
+            lanes: [lane],
+            keySeed: Array(0..<32),
+            keySlotCount: 4
+        )
+        let valid = try await packet.execute()
+        let tamperedCommitment = ClusterLaneCommitment(
+            laneName: valid.laneCommitments[0].laneName,
+            slotOffset: valid.laneCommitments[0].slotOffset,
+            slotCount: valid.laneCommitments[0].slotCount,
+            commitment: AjtaiCommitment(value: valid.laneCommitments[0].commitment.value + RingElement(constant: .one))
+        )
+        let tampered = ClusterFoldWorkResult(
+            packedWitness: valid.packedWitness,
+            aggregatedCommitment: valid.aggregatedCommitment,
+            laneCommitments: [tamperedCommitment]
+        )
+
+        XCTAssertFalse(tampered.isValid(for: packet))
+    }
+
+    func testDecomposeWorkResultRejectsTamperedReconstructedCommitment() async throws {
+        let keySeed = (64..<96).map(UInt8.init)
+        let key = AjtaiKey.expand(seed: keySeed, slotCount: 16)
+        let input = AcceptanceSupport.samplePiDECInput(key: key)
+        let packet = ClusterDecomposeWorkPacket(
+            witness: input.witness,
+            commitment: input.commitment,
+            keySeed: keySeed,
+            keySlotCount: key.slotCount,
+            decompBase: input.decompBase,
+            decompLimbs: input.decompLimbs
+        )
+        let valid = try await packet.execute()
+        let tampered = ClusterDecomposeWorkResult(
+            decomposedWitness: valid.decomposedWitness,
+            limbCommitments: valid.limbCommitments,
+            consistencyChallenge: valid.consistencyChallenge,
+            reconstructedCommitment: AjtaiCommitment(value: valid.reconstructedCommitment.value + RingElement(constant: .one))
+        )
+
+        XCTAssertFalse(tampered.isValid(for: packet))
+    }
+
     func testHachiSealWorkPacketExecutesThroughClusterExecutor() async throws {
         let principal = ClusterSession(
             role: .principal,
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
-            attestationVerifier: AcceptanceSupport.attestationVerifier
+            attestationVerifier: nonEmptyAttestationVerifier
         )
         let coProver = ClusterSession(
             role: .coProver,
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
-            attestationVerifier: AcceptanceSupport.attestationVerifier
+            attestationVerifier: nonEmptyAttestationVerifier
         )
         try await coProver.installWorkExecutor(ClusterWorkExecutor.standard())
 
@@ -204,4 +253,8 @@ final class ClusterWorkPacketTests: XCTestCase {
             witnessCommitmentRoot: [UInt8](repeating: 0x54, count: 32)
         )
     }
+}
+
+private let nonEmptyAttestationVerifier: AttestationVerifier = { attestation, _ in
+    !attestation.isEmpty
 }
