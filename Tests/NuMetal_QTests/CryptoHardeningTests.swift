@@ -122,6 +122,21 @@ final class CryptoHardeningTests: XCTestCase {
         XCTAssertFalse(PiCCS.verify(input: input, output: tampered, transcript: &tamperedTranscript))
     }
 
+    func testPiCCSRejectsOutputForDifferentStatement() {
+        let input = AcceptanceSupport.samplePiCCSInput(seed: 31)
+        var transcript = NuTranscriptField(domain: "Tests.PiCCS.StatementBinding")
+        let output = PiCCS.prove(input: input, transcript: &transcript)
+
+        let tamperedInput = PiCCS.Input(
+            relation: input.relation,
+            publicInputs: input.publicInputs,
+            witness: [input.witness[0] + .one] + Array(input.witness.dropFirst()),
+            relaxationFactor: input.relaxationFactor
+        )
+        var verifyTranscript = NuTranscriptField(domain: "Tests.PiCCS.StatementBinding")
+        XCTAssertFalse(PiCCS.verify(input: tamperedInput, output: output, transcript: &verifyTranscript))
+    }
+
     func testPiRLCDirectAndNegative() {
         let key = NuParams.derive(from: .canonical).fold.commitmentKey
         let inputs = AcceptanceSupport.samplePiRLCInputs(key: key, seed: 77)
@@ -145,6 +160,27 @@ final class CryptoHardeningTests: XCTestCase {
         XCTAssertFalse(PiRLC.verify(inputs: inputs, output: tampered, key: key, transcript: &tamperedTranscript))
     }
 
+    func testPiRLCRejectsOutputForDifferentStatement() {
+        let key = NuParams.derive(from: .canonical).fold.commitmentKey
+        let inputs = AcceptanceSupport.samplePiRLCInputs(key: key, seed: 91)
+        var transcript = NuTranscriptField(domain: "Tests.PiRLC.StatementBinding")
+        let output = PiRLC.prove(inputs: inputs, key: key, transcript: &transcript)
+
+        let tamperedFirst = PiRLC.Input(
+            commitment: inputs[0].commitment,
+            witness: inputs[0].witness,
+            publicInputs: [inputs[0].publicInputs[0] + .one] + Array(inputs[0].publicInputs.dropFirst()),
+            ccsEvaluations: inputs[0].ccsEvaluations,
+            relaxationFactor: inputs[0].relaxationFactor,
+            errorTerms: inputs[0].errorTerms
+        )
+        var tamperedInputs = inputs
+        tamperedInputs[0] = tamperedFirst
+
+        var verifyTranscript = NuTranscriptField(domain: "Tests.PiRLC.StatementBinding")
+        XCTAssertFalse(PiRLC.verify(inputs: tamperedInputs, output: output, key: key, transcript: &verifyTranscript))
+    }
+
     func testPiDECDirectAndNegative() {
         let key = NuParams.derive(from: .canonical).fold.commitmentKey
         let input = AcceptanceSupport.samplePiDECInput(key: key, seed: 88)
@@ -163,6 +199,23 @@ final class CryptoHardeningTests: XCTestCase {
         )
         var tamperedTranscript = NuTranscriptField(domain: "Tests.PiDEC")
         XCTAssertFalse(PiDEC.verify(input: input, output: tampered, transcript: &tamperedTranscript))
+    }
+
+    func testPiDECRejectsOutputForDifferentInputCommitment() {
+        let key = NuParams.derive(from: .canonical).fold.commitmentKey
+        let input = AcceptanceSupport.samplePiDECInput(key: key, seed: 101)
+        var transcript = NuTranscriptField(domain: "Tests.PiDEC.StatementBinding")
+        let output = PiDEC.prove(input: input, transcript: &transcript)
+
+        let tamperedInput = PiDEC.Input(
+            witness: input.witness,
+            commitment: AjtaiCommitment(value: input.commitment.value + RingElement(constant: .one)),
+            key: input.key,
+            decompBase: input.decompBase,
+            decompLimbs: input.decompLimbs
+        )
+        var verifyTranscript = NuTranscriptField(domain: "Tests.PiDEC.StatementBinding")
+        XCTAssertFalse(PiDEC.verify(input: tamperedInput, output: output, transcript: &verifyTranscript))
     }
 
     func testSumCheckDirectAndNegative() {
@@ -192,6 +245,22 @@ final class CryptoHardeningTests: XCTestCase {
                 numVars: polynomial.numVars,
                 claimedSum: polynomial.evals.reduce(.zero, +),
                 transcript: &tamperedTranscript
+            )
+        )
+    }
+
+    func testSumCheckRejectsWrongClaimedSum() {
+        let polynomial = AcceptanceSupport.samplePolynomial(seed: 19, numVars: 4)
+        var transcript = NuTranscriptField(domain: "Tests.SumCheck.ClaimBinding")
+        let proof = SumCheck.prove(polynomial: polynomial, transcript: &transcript)
+
+        var verifyTranscript = NuTranscriptField(domain: "Tests.SumCheck.ClaimBinding")
+        XCTAssertFalse(
+            SumCheck.verify(
+                proof: proof,
+                numVars: polynomial.numVars,
+                claimedSum: polynomial.evals.reduce(.zero, +) + .one,
+                transcript: &verifyTranscript
             )
         )
     }

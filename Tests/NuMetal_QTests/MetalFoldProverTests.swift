@@ -78,6 +78,90 @@ final class MetalFoldProverTests: XCTestCase {
         let isValid = try await resumedProver.verify(pcd)
         XCTAssertFalse(isValid)
     }
+
+    func testTypedVerifyFailsWithoutStepRegistrationAfterRestart() async throws {
+        let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "MetalFoldMissingStep")
+        let vaultDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let vaultKey = Data("NuMetalQ.Tests.MetalFoldProver.MissingStep".utf8)
+        let step = TestFoldStep(compiledShape: compiledShape)
+
+        let prover = try await MetalFoldProver(
+            vaultDirectory: vaultDirectory,
+            vaultKeyMaterial: vaultKey
+        )
+        let pcd = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 29))
+
+        let resumedProver = try await MetalFoldProver(
+            vaultDirectory: vaultDirectory,
+            vaultKeyMaterial: vaultKey
+        )
+        await resumedProver.register(compiledShape)
+
+        let isValid = try await resumedProver.verify(pcd)
+        XCTAssertFalse(isValid)
+    }
+
+    func testTypedVerifyFailsForForgedHeaderOnExistingChain() async throws {
+        let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "MetalFoldForgedHeader")
+        let vaultDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let prover = try await MetalFoldProver(
+            vaultDirectory: vaultDirectory,
+            vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.ForgedHeader".utf8)
+        )
+        let step = TestFoldStep(compiledShape: compiledShape)
+        let pcd = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 31))
+
+        let forgedHeader = TestHeader(
+            shapeDigest: pcd.header.shapeDigest,
+            publicInputs: pcd.header.publicInputs.map { $0 + .one }
+        )
+        let forged = Pcd(
+            chainID: pcd.chainID,
+            header: forgedHeader,
+            shapeDigest: pcd.shapeDigest
+        )
+
+        let isValid = try await prover.verify(forged)
+        XCTAssertFalse(isValid)
+    }
+
+    func testTypedFuseRejectsForgedChildHeader() async throws {
+        let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "MetalFoldForgedChild")
+        let vaultDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let prover = try await MetalFoldProver(
+            vaultDirectory: vaultDirectory,
+            vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.ForgedChild".utf8)
+        )
+        let step = TestFoldStep(compiledShape: compiledShape)
+        let left = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 37))
+        let right = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 41))
+
+        let forgedLeft = Pcd(
+            chainID: left.chainID,
+            header: TestHeader(
+                shapeDigest: left.header.shapeDigest,
+                publicInputs: left.header.publicInputs.map { $0 + .one }
+            ),
+            shapeDigest: left.shapeDigest
+        )
+
+        do {
+            _ = try await prover.fuse(
+                step,
+                witness: AcceptanceSupport.makeWitness(seed: 43),
+                left: forgedLeft,
+                right: right
+            )
+            XCTFail("Expected forged child header to be rejected during fuse")
+        } catch let error as MetalFoldProverError {
+            guard case .unsupportedStoredState = error else {
+                return XCTFail("Unexpected prover error: \(error)")
+            }
+        }
+    }
 }
 
 private struct TestHeader: NuHeader, Hashable {

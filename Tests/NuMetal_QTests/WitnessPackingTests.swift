@@ -38,4 +38,39 @@ final class WitnessPackingTests: XCTestCase {
 
         XCTAssertEqual(unpacked, values)
     }
+
+    func testCanonicalizeRingsReconstructsDecomposedRepresentation() throws {
+        let values = (0..<70).map { Fq(UInt64(($0 * 13 + 7) % 257)) }
+        let canonical = WitnessPacking.packFieldVectorToRings(values)
+        let decomposed = canonical.flatMap {
+            Decomposition.decompose(element: $0, base: 2, numLimbs: 13).limbs
+        }
+
+        let reconstructed = try WitnessPacking.canonicalizeRings(
+            decomposed,
+            originalFieldCount: values.count,
+            decompBase: 2,
+            decompLimbs: 13
+        )
+
+        XCTAssertEqual(reconstructed, canonical)
+    }
+
+    func testCanonicalizeRingsRejectsUnsupportedRepresentationCount() {
+        XCTAssertThrowsError(
+            try WitnessPacking.canonicalizeRings(
+                [RingElement.zero, RingElement.zero, RingElement.zero],
+                originalFieldCount: 70,
+                decompBase: 2,
+                decompLimbs: 13
+            )
+        ) { error in
+            guard case WitnessPacking.Error.unsupportedRepresentation(
+                expectedCanonicalRings: 2,
+                actualRings: 3
+            ) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
 }
