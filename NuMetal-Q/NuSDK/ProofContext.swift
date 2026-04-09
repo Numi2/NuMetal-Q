@@ -3,13 +3,12 @@ import CryptoKit
 
 // MARK: - Proof Context
 // Scoped proving session for a single shape.
-// Provides the compatible seed + binary fuse API.
 // resume() verifies an envelope and rebinds a fresh recursive state.
 
 /// A scoped proving session bound to a specific CCS shape.
 ///
 /// ProofContext provides the high-level API for creating and combining
-/// proofs using the compatible seed/fuse model.
+/// proofs for one compiled shape.
 ///
 /// All FoldState objects are managed internally and never exposed.
 /// The export surface is a signed public ProofEnvelope plus an encrypted
@@ -617,18 +616,6 @@ public actor ProofContext {
             verifySignature: verifySignature,
             requireAttestation: requireAttestation
         )
-    }
-
-    // MARK: - Persistence
-
-    @available(*, unavailable, message: "Raw FoldState persistence is removed from the public API. Resume verified ProofEnvelope values instead.")
-    public func persist(_ handle: ProofHandle) async throws {
-        fatalError("unavailable")
-    }
-
-    @available(*, unavailable, message: "Raw FoldState restore is removed from the public API. Resume verified ProofEnvelope values instead.")
-    public func restore(chainID: UUID) async throws -> ProofHandle {
-        fatalError("unavailable")
     }
 
     // MARK: - Policy

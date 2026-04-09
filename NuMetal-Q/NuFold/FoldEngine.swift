@@ -41,9 +41,6 @@ public struct FoldConfig: Sendable {
         keySlots: NuProfile.canonical.commitmentRank * NuProfile.canonical.ringDegree
     )
 
-    /// Backwards-compatible alias for the canonical configuration.
-    public static let standard = canonical
-
     public init(
         maxArity: Int,
         decompBase: UInt8,

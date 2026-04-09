@@ -4,8 +4,7 @@ import CryptoKit
 // MARK: - NuMeQ Public SDK
 // The public API surface for NuMeQ.
 // Idiomatic Swift. Zero-knowledge by default.
-// compatible seed + binary fuse logical model.
-// SuperNeo folding core with post-quantum CCS.
+// Seed, fuse, seal, verify, and resume operations over the canonical proving stack.
 
 /// NuMeQ: Post-quantum zero-knowledge proof-carrying data engine.
 ///
@@ -76,25 +75,6 @@ public actor NuMeQ {
             teamID: teamID,
             attestationVerifier: attestationVerifier
         )
-    }
-
-    @available(*, unavailable, message: "Use createContext(compiledShape:) with a verified signed ShapePack.")
-    public func createContext(
-        shape: Shape,
-        profileID: UUID = UUID(),
-        appID: String = Bundle.main.bundleIdentifier ?? "numeq"
-    ) -> ProofContext {
-        fatalError("unavailable")
-    }
-
-    // MARK: - Top-Level Resume
-
-    @available(*, unavailable, message: "Raw vault resume is removed. Use ProofContext.resume(envelope:...) instead.")
-    public func resume(
-        chainID: UUID,
-        in context: ProofContext
-    ) async throws -> ProofHandle {
-        fatalError("unavailable")
     }
 
     // MARK: - Top-Level Verify
@@ -278,20 +258,6 @@ public actor NuMeQ {
     /// AG64 field tower, decider contract, schedule invariants, and release gate.
     public func generateCertificate() -> ProfileCertificate {
         ProfileCertificate.generate(for: profile)
-    }
-
-    // MARK: - Vault Management
-
-    /// Unlock the proof vault for persistent state storage.
-    @available(*, unavailable, message: "Raw FoldState vault management is removed from the public NuMeQ API.")
-    public func unlockVault(keyMaterial: Data) async throws {
-        fatalError("unavailable")
-    }
-
-    /// Lock the vault, clearing all in-memory state.
-    @available(*, unavailable, message: "Raw FoldState vault management is removed from the public NuMeQ API.")
-    public func lockVault() async {
-        fatalError("unavailable")
     }
 
     // MARK: - Cluster
