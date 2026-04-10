@@ -17,24 +17,26 @@ NuMeQ's current production profile is the canonical profile selected by `NuProfi
 
 - Ring degree: `d = 64`
 - Commitment rank: `16`
-- Fold decomposition base: `b = 2`
-- Fold decomposition limbs: `k = 13`
-- Fold norm ceiling:
+- Recursive-fold decomposition base: `b_dec = 2`
+- Recursive-fold decomposition limbs: `L_dec = 13`
+- Recursive-fold certified norm ceiling:
 
-  `B = b^k = 2^13 = 8192`
+  `B_max = b_dec^L_dec = 2^13 = 8192`
 
 - Challenge set for ring-valued fold challenges:
 
-  `C = {-1, 0, 1, 2}`
+  `C_rho = {-1, 0, 1, 2}`
 
 - Max supported recursive depth: `32`
 - Fiat-Shamir challenge count: `16`
-- Hachi variable count: `1024`
+- Hachi table-budget metadata: `1024` evaluations (`2^10`); actual multilinear arities are shape-dependent
 - Hachi batching width: `8`
 - PiDEC interval: `1`
-- Informational security estimates:
+- Informational security estimates from the in-repo heuristic profile search:
   - raw bits = `222`
   - composed bits = `174`
+
+The raw/composed security-bit figures above are profile metadata copied from the heuristic estimator in `NuProfile.swift`. They are not derived from the algebra in this note and should not be read as theorem statements.
 
 The algebraic tower is:
 
@@ -45,8 +47,17 @@ The algebraic tower is:
 
 The seal layer also has a separate direct-packed relation proof with its own decomposition parameters:
 
-- direct-packed base = `2`
-- direct-packed limbs = `64`
+- `b_dir = 2`
+- `L_dir = 64`
+
+### 1.1 Notation used below
+
+To avoid collisions, the rest of this note uses:
+
+- `m_fold` for PiRLC fold arity
+- `(b_dec, L_dec, B_max)` for the recursive-fold decomposition schedule
+- `(b_dir, L_dir)` for the direct-packed seal relation
+- `C_rho = {-1, 0, 1, 2}` for the coefficient alphabet of ring-valued PiRLC challenges
 
 ## 2. Base Field Fq
 
@@ -159,7 +170,7 @@ Conjugate, norm, inverse:
 - `N(A + B*v) = A^2 - eta*B^2`
 - `(A + B*v)^(-1) = conj(A + B*v) / N(A + B*v)`
 
-The ring multiplication code scalar-extends into `Fq4`, multiplies there, and then requires projection back into the base subfield `Fq`.
+The ring multiplication code scalar-extends into `Fq4`, multiplies there, checks that every accumulated coefficient still lies in the embedded copy of `Fq`, and only then reinterprets that value as a base-field coefficient.
 
 ## 4. Negacyclic Ring Rq
 
@@ -256,6 +267,8 @@ A multilinear polynomial in `nu` variables is represented by its evaluations on 
 
 The repo stores the full evaluation table of size `2^nu`.
 
+The actual arity `nu` is determined by the concrete oracle being committed. The profile metadata field named `hachiVariableCount` carries the legacy value `1024`; mathematically that should be read as an evaluation-table budget (`2^10`), not as a claim that the protocol uses `1024` literal multilinear variables.
+
 Evaluation at an arbitrary point `r in Fq^nu` is the multilinear extension:
 
 `f(r) = sum_{x in {0,1}^nu} f(x) * eq_r(x)`
@@ -277,19 +290,24 @@ The repo lowers constraints to a Customizable Constraint System (CCS).
 A CCS instance consists of:
 
 - matrices `M1, ..., Mt in Fq^(m x n)`
-- gate multisets `S1, ..., Ss`, each `Si subseteq [t]`
+- gate index multisets `S1, ..., Ss`, where each `Si` is represented as an ordered list
+
+  `Si = (s_{i,1}, ..., s_{i,deg_i})`, with every `s_{i,a} in [t]`
+
 - coefficients `c1, ..., cs in Fq`
 - witness/public assignment `z in Fq^n`
 
 The satisfaction relation is:
 
-`sum_i c_i * (circ_{j in S_i} (M_j * z)) = 0 in Fq^m`
+`sum_i c_i * (circ_{a=1}^{deg_i} (M_{s_{i,a}} * z)) = 0 in Fq^m`
 
 where `circ` is the Hadamard product.
 
 For row `r`, the row constraint is:
 
-`sum_i c_i * prod_{j in S_i} (M_j z)[r] = 0`.
+`sum_i c_i * prod_{a=1}^{deg_i} (M_{s_{i,a}} z)[r] = 0`.
+
+This notation preserves multiplicity. If the same matrix index appears more than once in a gate, the corresponding row value is repeated in the Hadamard product, exactly as in the Swift `matrixIndices: [UInt16]` representation.
 
 Sparse matrices are stored in CSR format, but the math is ordinary sparse matrix-vector multiplication:
 
@@ -305,7 +323,7 @@ Given a folded CCS instance, PiCCS samples
 
 from the transcript and forms a linearized table:
 
-`gateSum[i] = sum_g c_g * prod_{j in S_g} (M_j z)[i]`
+`gateSum[i] = sum_g c_g * prod_{a=1}^{deg_g} (M_{s_{g,a}} z)[i]`
 
 `p(i) = tau_i * gateSum[i]`
 
@@ -345,17 +363,21 @@ The final claim must match the polynomial evaluation at the final challenge poin
 
 ## 11. PiRLC: Random Linear Combination Fold
 
-PiRLC is the second folding stage. It folds `k` running instances with ring-valued challenges.
+PiRLC is the second folding stage. The implementation performs an accumulator-style `m_fold`-ary fold with a distinguished base instance `0`; it should not be read as the generic quadratic residual formula for simultaneously folding all instances of a relaxed quadratic relation.
 
-Each challenge is a ring
+Each ring challenge is a ring
 
 `rho_i in Rq`
 
 whose coefficients are independently drawn from
 
-`C = {-1, 0, 1, 2}`.
+`C_rho = {-1, 0, 1, 2}`.
 
-The constant coefficient `rho_i[0]` is used as the scalar challenge for public-input and field-level folding.
+Field-valued claims are folded with separate Fiat-Shamir scalars
+
+`alpha_i in Fq`
+
+derived from transcript domain `PiRLC.scalar_fold`. They are not taken from a coefficient of `rho_i`.
 
 Given inputs
 
@@ -373,77 +395,99 @@ the repo computes:
 
 - folded public inputs:
 
-  `x' = sum_i rho_i[0] * x_i`
+  `x' = sum_i alpha_i * x_i`
 
 - folded CCS evaluations:
 
-  `y' = sum_i rho_i[0] * y_i`
+  `y' = sum_i alpha_i * y_i`
 
 - folded relaxation factor:
 
-  `u' = sum_i rho_i[0] * u_i`
+  `u' = sum_i alpha_i * u_i`
 
-The implementation also forms cross terms against the first witness:
+The implementation also forms cross terms against the distinguished witness `w_0`:
 
 `T_j[l] = w_0[l] * w_j[l]`
 
-for `j = 1, ..., k-1`.
+for `j = 1, ..., m_fold-1`.
 
 These are committed with the same Ajtai commitment.
 
 Folded error terms are computed as:
 
-`e'[l] = sum_i rho_i * e_i[l] + sum_{j=1}^{k-1} rho_{j+1} * T_j[l]`
+`e'[l] = sum_{i=0}^{m_fold-1} rho_i * e_i[l] + sum_{j=1}^{m_fold-1} rho_j * T_j[l]`
 
 with missing entries treated as zero.
 
+This is the exact accumulator recurrence implemented in `NuMetal-Q/NuFold/PiRLC.swift`. A generic quadratic expansion of a simultaneous relaxed fold would instead involve squared challenge weights and pairwise bilinear terms for all `i < j`. The current note therefore documents PiRLC as a specific accumulator update, not as the generic formula for every quadratic relaxed relation.
+
 ## 12. Norm Budget and PiDEC
 
-Folding grows witness norms, so the repo keeps an explicit norm budget.
+Folding grows witness norms, so the repo keeps an explicit operational norm budget.
 
-After a `k`-ary fold, the budget update rule is:
+For the recursive accumulator, `currentNorm` tracks a coarse infinity-norm proxy on packed witness rings. The initial value is the maximum coefficient infinity norm of the packed witness. After an `m_fold`-ary PiRLC step, the implementation sets
 
-`currentNorm <- k * currentNorm + challengeMagnitude`
+`challengeMagnitude = max_i ||rho_i||_inf`
+
+and updates:
+
+`currentNorm <- m_fold * currentNorm + challengeMagnitude`
 
 and the fold counter increments.
 
-Decomposition is forced by a fixed cadence and also serves to re-normalize the witness.
+This is the exact scheduler rule in `NuMetal-Q/NuFold/NormBudget.swift`. It is not presented as a proved convolution-operator inequality. A sound analytic derivation would need to specify an operator norm for negacyclic multiplication, for example a bound of the form
+
+`||rho * w||_inf <= ||rho||_1 * ||w||_inf`.
+
+This note does not derive such a constant, so `currentNorm` should be read as a fixed operational budget tied to the profile's PiDEC cadence, not as a standalone theorem about ring multiplication.
+
+Decomposition is forced by that fixed cadence and serves to re-normalize the witness. After a decomposition, the implementation resets
+
+`currentNorm <- b_dec - 1`.
 
 ### Decomposition
 
-For a centered coefficient `c`, PiDEC decomposes it into signed base-`B` digits:
+In the canonical recursive fold path,
 
-`c = c_0 + c_1 * B + c_2 * B^2 + ...`
+`b_dec = 2`, `L_dec = 13`, and `B_max = 2^13 = 8192`.
 
-with
+For a centered coefficient `c` with `|c|_c < B_max`, PiDEC decomposes it as:
 
-`|c_l| < B`.
+`c = sum_{l=0}^{L_dec-1} d_l * b_dec^l`
 
-In the fold pipeline, `B = 2` and `k = 13`.
+with digits satisfying
 
-For a ring element, decomposition is done coefficientwise, producing `k` ring limbs.
+`|d_l| < b_dec`.
+
+Because `b_dec = 2` in the canonical profile, every digit lies in
+
+`d_l in {-1, 0, 1}`.
+
+For a ring element, decomposition is done coefficientwise, producing `L_dec` ring limbs.
 
 ### PiDEC commitment check
 
 Let `L_l` be the commitment to the vector of all `l`-th limbs. PiDEC checks:
 
-`sum_l B^l * L_l = original_commitment`
+`sum_{l=0}^{L_dec-1} b_dec^l * L_l = C_orig`
 
-The verifier also checks that every output limb coefficient satisfies the centered bound `< B`.
+The verifier also checks that every output limb coefficient satisfies the centered bound `< b_dec`; in the canonical profile this is equivalent to checking digits in `{-1, 0, 1}`.
 
 ## 13. Hachi PCS: General Path
 
-The terminal seal layer uses a multilinear PCS with two modes.
+The terminal seal layer uses a multilinear opening backend with two modes. In the code this component is called a PCS; mathematically, the general path is an authenticated repetition oracle built on top of the multilinear evaluation table.
 
 For the general path:
 
-1. The polynomial evaluation table is packed into ring chunks with the canonical 64-to-1 packing.
-2. The packed table is committed with an Ajtai commitment.
-3. A codeword is formed by repeating the base evaluation table with blowup factor `4`:
+1. The polynomial evaluation table `base = f.evals` of size `2^nu` is packed into ring chunks with the canonical 64-to-1 packing.
+2. The packed table is committed with an Ajtai commitment, and the raw evaluation table is hashed into `tableDigest`.
+3. The implementation then forms a length-`4n` repetition oracle (named `codeword` in the code) by repeating the base table with blowup factor `4`:
 
    `codeword[t] = base[t mod n]`
 
 4. A Merkle tree is built over the codeword.
+
+This repetition step is not a low-degree extension. By itself it is only a Merklized repetition oracle. In NuMeQ, soundness for the general path comes from the surrounding seal relation, transcript binding, table digest, Ajtai table commitment, and Merkle authentication, not from a standalone low-degree PCS argument.
 
 ### Merkle hashing
 
@@ -491,17 +535,17 @@ for all `x in {0,1}^ell`.
 
 These weights are chunked into groups of 64 coefficients and then expanded across decomposition limbs:
 
-`lambda_{chunk, limb} = B^limb * chunkWeights`
+`lambda_{chunk, limb} = b_dir^limb * chunkWeights`
 
-with `B = 2` in the direct-packed relation.
+with `b_dir = 2` and `L_dir = 64` in the direct-packed relation.
 
 ### 14.2 Short linear witness relation
 
 For each packed witness chunk:
 
-1. Decompose the packed chunk into `64` base-2 limb rings. This is the short witness.
+1. Decompose the packed chunk into `L_dir = 64` base-`b_dir = 2` limb rings. This is the short witness.
 2. Form an inner linear image with the direct-packed relation key.
-3. Decompose that inner image into another `64` base-2 limb rings. These are the outer digits.
+3. Decompose that inner image into another `L_dir = 64` base-`b_dir = 2` limb rings. These are the outer digits.
 4. Commit those outer digits with the outer key.
 
 The direct-packed proof simultaneously enforces four linear relations:
@@ -512,15 +556,27 @@ The direct-packed proof simultaneously enforces four linear relations:
 
 2. Inner/outer consistency relation:
 
-   `<A_rel, shortWitness_i> - sum_l B^l * outerDigits_{i,l} = 0`
+   `<A_rel, shortWitness_i> - sum_l b_dir^l * outerDigits_{i,l} = 0`
 
 3. Evaluation relation:
 
    `sum_{i,l} <shortWitness_{i,l}, lambda_{i,l}>_0 = claimedValue`
 
-   where `<., .>_0` means "take the constant coefficient of the negacyclic product", implemented as
+   For ring elements
 
-   `const( w * sigma(lambda) )`
+   `w(X) = sum_{j=0}^{63} w_j X^j`
+
+   and
+
+   `lambda(X) = sum_{j=0}^{63} lambda_j X^j`,
+
+   define the negacyclic involution
+
+   `sigma(lambda)(X) = lambda(X^(-1)) mod (X^64 + 1) = lambda_0 - sum_{j=1}^{63} lambda_j X^{64-j}`.
+
+   Then
+
+   `<w, lambda>_0 = const( w * sigma(lambda) ) = sum_{j=0}^{63} w_j lambda_j`.
 
 4. Outer commitment relation:
 
@@ -568,9 +624,9 @@ The Metal side mirrors the same math:
   - partial sums for `s_r(0)` and `s_r(1)`
   - multilinear bind step `(1-r)e0 + r e1`
 - `NuDecompKernels.metal`
-  - centered base-`B` digit extraction for power-of-two `B`
+  - centered digit extraction for power-of-two decomposition bases
 - `NuSealKernels.metal`
-  - repeated-table codeword extension
+  - repeated-table oracle extension
   - Merkle leaf hashing `SHA256(0x00 || leaf)`
   - Merkle parent hashing `SHA256(left || right)`
 
