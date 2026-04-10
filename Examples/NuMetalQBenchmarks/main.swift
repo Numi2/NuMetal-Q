@@ -1150,9 +1150,13 @@ enum NuMetalQBenchmarks {
 
     private static func samplePCSEvaluations(numVars: Int) -> [Fq] {
         let count = 1 << numVars
-        return (0..<count).map { index in
-            Fq(UInt64((index * 37 + numVars * 19 + 5) % 65521))
+        var evaluations = [Fq]()
+        evaluations.reserveCapacity(count)
+        for index in 0..<count {
+            let sample = (index * 37 + numVars * 19 + 5) % 65521
+            evaluations.append(Fq(UInt64(sample)))
         }
+        return evaluations
     }
 
     private static func samplePCSQueryPositions(codewordLength: Int) -> [UInt32] {
