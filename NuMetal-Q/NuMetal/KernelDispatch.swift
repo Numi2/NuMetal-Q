@@ -55,6 +55,32 @@ public final class KernelDispatcher: @unchecked Sendable {
             from: counterSamples,
             fallback: gpuWindowMilliseconds
         )
+        let counterCaptured = counterSamples != nil
+        let counterCaptureState: MetalCounterCaptureState
+        if counterSamplingAvailable == false {
+            counterCaptureState = .unsupported
+        } else {
+            counterCaptureState = counterCaptured ? .captured : .availableButNotCaptured
+        }
+        let gpuTimingSource: MetalGPUTimingSource
+        if counterCaptured, gpuMilliseconds != nil {
+            gpuTimingSource = .dispatchBoundaryCounter
+        } else if gpuWindowMilliseconds != nil {
+            gpuTimingSource = .commandBufferTimeline
+        } else {
+            gpuTimingSource = .unavailable
+        }
+        let counterFallbackReason: String?
+        switch (counterCaptureState, gpuTimingSource) {
+        case (.captured, _), (_, .unavailable):
+            counterFallbackReason = nil
+        case (.unsupported, .commandBufferTimeline):
+            counterFallbackReason = "dispatch-boundary counters unsupported on this host; used command-buffer timeline"
+        case (.availableButNotCaptured, .commandBufferTimeline):
+            counterFallbackReason = "dispatch-boundary counters available but not captured; used command-buffer timeline"
+        default:
+            counterFallbackReason = nil
+        }
         let gpuStartOffsetMicroseconds: Double?
         let gpuEndOffsetMicroseconds: Double?
         if let counterSamples,
@@ -70,12 +96,13 @@ public final class KernelDispatcher: @unchecked Sendable {
             gpuEndOffsetMicroseconds = nil
         }
 
-        let counterCaptured = counterSamples != nil
-
         let timing = MetalDispatchTiming(
             cpuMilliseconds: elapsed,
             gpuMilliseconds: gpuMilliseconds,
             counterSamplingAvailable: counterSamplingAvailable,
+            counterCaptureState: counterCaptureState,
+            gpuTimingSource: gpuTimingSource,
+            counterFallbackReason: counterFallbackReason,
             gpuStartOffsetMicroseconds: gpuStartOffsetMicroseconds,
             gpuEndOffsetMicroseconds: gpuEndOffsetMicroseconds,
             threadExecutionWidth: threadExecutionWidth,
@@ -618,6 +645,112 @@ public final class KernelDispatcher: @unchecked Sendable {
             counterSampleBuffer: counterSampleBuffer,
             trace: trace
         )
+    }
+
+    // MARK: - Direct-Packed Final Opening
+
+    package func dispatchDirectPackedMaskPrepare(
+        parameterBuffer: MetalBufferSlice,
+        gaussianThresholdBuffer: MetalBufferSlice,
+        shortMagnitudeRawBuffer: MetalBufferSlice,
+        shortSignRawBuffer: MetalBufferSlice,
+        outerMagnitudeRawBuffer: MetalBufferSlice,
+        outerSignRawBuffer: MetalBufferSlice,
+        bindingCoefficientBuffer: MetalBufferSlice,
+        relationShortCoefficientBuffer: MetalBufferSlice,
+        relationOuterCoefficientBuffer: MetalBufferSlice,
+        evaluationWeightBuffer: MetalBufferSlice,
+        outerCoefficientBuffer: MetalBufferSlice,
+        shortMaskBuffer: MetalBufferSlice,
+        outerMaskBuffer: MetalBufferSlice,
+        bindingMaskVectorBuffer: MetalBufferSlice,
+        relationMaskVectorBuffer: MetalBufferSlice,
+        evaluationMaskBuffer: MetalBufferSlice,
+        outerMaskVectorBuffer: MetalBufferSlice,
+        totalCoefficientCount: Int
+    ) throws {
+        let pso = try context.pipeline(for: .directPackedMaskPrepare)
+        guard let cmdBuffer = context.commandQueue.makeCommandBuffer(),
+              let encoder = cmdBuffer.makeComputeCommandEncoder() else {
+            throw NuMetalError.encodingFailed
+        }
+
+        encoder.setComputePipelineState(pso)
+        encoder.setBuffer(parameterBuffer.buffer, offset: parameterBuffer.offset, index: 0)
+        encoder.setBuffer(gaussianThresholdBuffer.buffer, offset: gaussianThresholdBuffer.offset, index: 1)
+        encoder.setBuffer(shortMagnitudeRawBuffer.buffer, offset: shortMagnitudeRawBuffer.offset, index: 2)
+        encoder.setBuffer(shortSignRawBuffer.buffer, offset: shortSignRawBuffer.offset, index: 3)
+        encoder.setBuffer(outerMagnitudeRawBuffer.buffer, offset: outerMagnitudeRawBuffer.offset, index: 4)
+        encoder.setBuffer(outerSignRawBuffer.buffer, offset: outerSignRawBuffer.offset, index: 5)
+        encoder.setBuffer(bindingCoefficientBuffer.buffer, offset: bindingCoefficientBuffer.offset, index: 6)
+        encoder.setBuffer(relationShortCoefficientBuffer.buffer, offset: relationShortCoefficientBuffer.offset, index: 7)
+        encoder.setBuffer(relationOuterCoefficientBuffer.buffer, offset: relationOuterCoefficientBuffer.offset, index: 8)
+        encoder.setBuffer(evaluationWeightBuffer.buffer, offset: evaluationWeightBuffer.offset, index: 9)
+        encoder.setBuffer(outerCoefficientBuffer.buffer, offset: outerCoefficientBuffer.offset, index: 10)
+        encoder.setBuffer(shortMaskBuffer.buffer, offset: shortMaskBuffer.offset, index: 11)
+        encoder.setBuffer(outerMaskBuffer.buffer, offset: outerMaskBuffer.offset, index: 12)
+        encoder.setBuffer(bindingMaskVectorBuffer.buffer, offset: bindingMaskVectorBuffer.offset, index: 13)
+        encoder.setBuffer(relationMaskVectorBuffer.buffer, offset: relationMaskVectorBuffer.offset, index: 14)
+        encoder.setBuffer(evaluationMaskBuffer.buffer, offset: evaluationMaskBuffer.offset, index: 15)
+        encoder.setBuffer(outerMaskVectorBuffer.buffer, offset: outerMaskVectorBuffer.offset, index: 16)
+
+        let executionWidth = max(1, Int(pso.threadExecutionWidth))
+        let threadgroupSize = canonicalThreadgroupSize(
+            requestedWidth: executionWidth,
+            pipeline: pso
+        )
+        let gridSize = MTLSize(width: 1, height: 1, depth: 1)
+        encoder.dispatchThreads(gridSize, threadsPerThreadgroup: threadgroupSize)
+        encoder.endEncoding()
+        cmdBuffer.commit()
+        cmdBuffer.waitUntilCompleted()
+
+        if cmdBuffer.status == .error {
+            throw NuMetalError.executionFailed
+        }
+    }
+
+    package func dispatchDirectPackedResponseFinalize(
+        parameterBuffer: MetalBufferSlice,
+        shortMaskBuffer: MetalBufferSlice,
+        outerMaskBuffer: MetalBufferSlice,
+        residualShortBuffer: MetalBufferSlice,
+        residualOuterBuffer: MetalBufferSlice,
+        shortResponseBuffer: MetalBufferSlice,
+        outerResponseBuffer: MetalBufferSlice,
+        metricsBuffer: MetalBufferSlice,
+        totalCoefficientCount: Int
+    ) throws {
+        let pso = try context.pipeline(for: .directPackedResponseFinalize)
+        guard let cmdBuffer = context.commandQueue.makeCommandBuffer(),
+              let encoder = cmdBuffer.makeComputeCommandEncoder() else {
+            throw NuMetalError.encodingFailed
+        }
+
+        encoder.setComputePipelineState(pso)
+        encoder.setBuffer(parameterBuffer.buffer, offset: parameterBuffer.offset, index: 0)
+        encoder.setBuffer(shortMaskBuffer.buffer, offset: shortMaskBuffer.offset, index: 1)
+        encoder.setBuffer(outerMaskBuffer.buffer, offset: outerMaskBuffer.offset, index: 2)
+        encoder.setBuffer(residualShortBuffer.buffer, offset: residualShortBuffer.offset, index: 3)
+        encoder.setBuffer(residualOuterBuffer.buffer, offset: residualOuterBuffer.offset, index: 4)
+        encoder.setBuffer(shortResponseBuffer.buffer, offset: shortResponseBuffer.offset, index: 5)
+        encoder.setBuffer(outerResponseBuffer.buffer, offset: outerResponseBuffer.offset, index: 6)
+        encoder.setBuffer(metricsBuffer.buffer, offset: metricsBuffer.offset, index: 7)
+
+        let executionWidth = max(1, Int(pso.threadExecutionWidth))
+        let threadgroupSize = canonicalThreadgroupSize(
+            requestedWidth: executionWidth,
+            pipeline: pso
+        )
+        let gridSize = MTLSize(width: 1, height: 1, depth: 1)
+        encoder.dispatchThreads(gridSize, threadsPerThreadgroup: threadgroupSize)
+        encoder.endEncoding()
+        cmdBuffer.commit()
+        cmdBuffer.waitUntilCompleted()
+
+        if cmdBuffer.status == .error {
+            throw NuMetalError.executionFailed
+        }
     }
 
     // MARK: - Sum-Check Partial Reduction

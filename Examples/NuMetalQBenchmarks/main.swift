@@ -438,6 +438,13 @@ enum NuMetalQBenchmarks {
                     assistedVerifyGPU: nil,
                     assistanceMode: metalContext == nil ? "cpu-only" : "metal-assisted",
                     counterSamplingAvailable: counterSamplingAvailable,
+                    counterCaptureState: defaultCounterCaptureState(counterSamplingAvailable: counterSamplingAvailable),
+                    gpuTimingSource: MetalGPUTimingSource.unavailable.rawValue,
+                    counterFallbackReason: verifierCounterFallbackReason(
+                        metalAvailable: metalContext != nil,
+                        counterSamplingAvailable: counterSamplingAvailable,
+                        dispatchSamples: []
+                    ),
                     dispatchCount: 0,
                     dispatchSummaries: [],
                     dispatchTracePath: await artifactWriter.dispatchTracePath(),
@@ -512,6 +519,16 @@ enum NuMetalQBenchmarks {
                             assistedGPUSamples: assistedGPUSamples,
                             assistanceMode: metalContext == nil ? "cpu-only" : "metal-assisted",
                             counterSamplingAvailable: counterSamplingAvailable,
+                            counterCaptureState: verifierCounterCaptureState(
+                                counterSamplingAvailable: counterSamplingAvailable,
+                                dispatchSamples: dispatchSamples
+                            ),
+                            gpuTimingSource: verifierTimingSource(dispatchSamples: dispatchSamples),
+                            counterFallbackReason: verifierCounterFallbackReason(
+                                metalAvailable: metalContext != nil,
+                                counterSamplingAvailable: counterSamplingAvailable,
+                                dispatchSamples: dispatchSamples
+                            ),
                             dispatchSummaries: aggregateDispatchSummaries(dispatchSamples),
                             dispatchTracePath: await artifactWriter.dispatchTracePath(),
                             gpuFamilyTag: metalContext?.gpuFamilyTag ?? "unavailable",
@@ -592,6 +609,16 @@ enum NuMetalQBenchmarks {
                             assistedGPUSamples: assistedGPUSamples,
                             assistanceMode: metalContext == nil ? "cpu-only" : "metal-assisted",
                             counterSamplingAvailable: counterSamplingAvailable,
+                            counterCaptureState: verifierCounterCaptureState(
+                                counterSamplingAvailable: counterSamplingAvailable,
+                                dispatchSamples: dispatchSamples
+                            ),
+                            gpuTimingSource: verifierTimingSource(dispatchSamples: dispatchSamples),
+                            counterFallbackReason: verifierCounterFallbackReason(
+                                metalAvailable: metalContext != nil,
+                                counterSamplingAvailable: counterSamplingAvailable,
+                                dispatchSamples: dispatchSamples
+                            ),
                             dispatchSummaries: aggregateDispatchSummaries(dispatchSamples),
                             dispatchTracePath: await artifactWriter.dispatchTracePath(),
                             gpuFamilyTag: metalContext?.gpuFamilyTag ?? "unavailable",
@@ -666,6 +693,16 @@ enum NuMetalQBenchmarks {
                             assistedGPUSamples: assistedGPUSamples,
                             assistanceMode: metalContext == nil ? "cpu-only" : "metal-assisted",
                             counterSamplingAvailable: counterSamplingAvailable,
+                            counterCaptureState: verifierCounterCaptureState(
+                                counterSamplingAvailable: counterSamplingAvailable,
+                                dispatchSamples: dispatchSamples
+                            ),
+                            gpuTimingSource: verifierTimingSource(dispatchSamples: dispatchSamples),
+                            counterFallbackReason: verifierCounterFallbackReason(
+                                metalAvailable: metalContext != nil,
+                                counterSamplingAvailable: counterSamplingAvailable,
+                                dispatchSamples: dispatchSamples
+                            ),
                             dispatchSummaries: aggregateDispatchSummaries(dispatchSamples),
                             dispatchTracePath: await artifactWriter.dispatchTracePath(),
                             gpuFamilyTag: metalContext?.gpuFamilyTag ?? "unavailable",
@@ -690,6 +727,16 @@ enum NuMetalQBenchmarks {
                 assistedGPUSamples: assistedGPUSamples,
                 assistanceMode: metalContext == nil ? "cpu-only" : "metal-assisted",
                 counterSamplingAvailable: counterSamplingAvailable,
+                counterCaptureState: verifierCounterCaptureState(
+                    counterSamplingAvailable: counterSamplingAvailable,
+                    dispatchSamples: dispatchSamples
+                ),
+                gpuTimingSource: verifierTimingSource(dispatchSamples: dispatchSamples),
+                counterFallbackReason: verifierCounterFallbackReason(
+                    metalAvailable: metalContext != nil,
+                    counterSamplingAvailable: counterSamplingAvailable,
+                    dispatchSamples: dispatchSamples
+                ),
                 dispatchSummaries: aggregateDispatchSummaries(dispatchSamples),
                 dispatchTracePath: await artifactWriter.dispatchTracePath(),
                 gpuFamilyTag: metalContext?.gpuFamilyTag ?? "unavailable",
@@ -721,6 +768,18 @@ enum NuMetalQBenchmarks {
         lines.append("- Iterations: \(report.configuration.iterations)")
         lines.append("- Warmups: \(report.configuration.warmups)")
         lines.append("")
+        lines.append("## GPU Observability")
+        lines.append("")
+        lines.append("- GPU: \(report.verifierObservability.gpuFamilyTag) (\(report.verifierObservability.gpuName))")
+        lines.append("- Counter sampling: \(report.verifierObservability.counterSamplingAvailable ? "available" : "unsupported")")
+        lines.append("- Counter state: \(report.verifierObservability.counterCaptureState.rawValue)")
+        lines.append("- Captured dispatches: \(report.verifierObservability.counterCapturedDispatches)/\(report.verifierObservability.totalDispatches) (\(formatDensity(report.verifierObservability.counterCapturedPercentage)))")
+        let timingBreakdown = report.verifierObservability.timingSourceBreakdown.map { "\($0.timingSource)=\($0.dispatchCount)" }
+        lines.append("- Timing sources: \(timingBreakdown.isEmpty ? "none" : timingBreakdown.joined(separator: ", "))")
+        if report.verifierObservability.counterFallbackReasons.isEmpty == false {
+            lines.append("- Fallbacks: \(report.verifierObservability.counterFallbackReasons.joined(separator: " | "))")
+        }
+        lines.append("")
         lines.append("## Seal Workflow")
         lines.append("")
         lines.append("| Workload | State | Progress | Family | Scenario | Rows | Witness | Matrices | NNZ | Density | Gate Deg | Peak RSS | GPU | Public Proof Bytes | Resume Artifact Bytes | Total Export Bytes | Seed-1 p50/p95 | Seed-2 p50/p95 | Fuse p50/p95 | Seal p50/p95 | CPU Verify p50/p95 | Assisted Verify p50/p95 | Assisted GPU p50/p95 | Parity | Trace | Verify Note | Fuse Note |")
@@ -733,22 +792,22 @@ enum NuMetalQBenchmarks {
         lines.append("")
         lines.append("## Verifier Stages")
         lines.append("")
-        lines.append("| Workload | Stage | State | Progress | Peak RSS | GPU | CPU Verify p50/p95 | Assisted Verify p50/p95 | Assisted GPU p50/p95 | Dispatches | Counters | Trace | Note |")
-        lines.append("| --- | --- | --- | --- | ---: | --- | --- | --- | --- | ---: | --- | --- | --- |")
+        lines.append("| Workload | Stage | State | Progress | Peak RSS | GPU | CPU Verify p50/p95 | Assisted Verify p50/p95 | Assisted GPU p50/p95 | Dispatches | Counter State | GPU Timing | Fallback | Trace | Note |")
+        lines.append("| --- | --- | --- | --- | ---: | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |")
         for result in report.verifierWorkloads {
             lines.append(
-                "| \(result.workload.name) | \(result.workload.stage.rawValue) | \(result.status.rawValue) | \(result.completedIterations)/\(result.expectedIterations) iters, \(result.completedSamples)/\(result.expectedSamples) samples | \(result.peakRSSBytes) | \(result.gpuFamilyTag) | \(formatPair(result.cpuVerify)) | \(formatPair(result.assistedVerify)) | \(formatPair(result.assistedVerifyGPU)) | \(result.dispatchCount) | \(formatCounterStatus(available: result.counterSamplingAvailable, captured: result.dispatchSummaries.allSatisfy(\.counterSamplesCaptured))) | \(result.dispatchTracePath ?? "") | \(result.note ?? "") |"
+                "| \(result.workload.name) | \(result.workload.stage.rawValue) | \(result.status.rawValue) | \(result.completedIterations)/\(result.expectedIterations) iters, \(result.completedSamples)/\(result.expectedSamples) samples | \(result.peakRSSBytes) | \(result.gpuFamilyTag) | \(formatPair(result.cpuVerify)) | \(formatPair(result.assistedVerify)) | \(formatPair(result.assistedVerifyGPU)) | \(result.dispatchCount) | \(formatCounterStatus(result.counterCaptureState)) | \(formatTimingSource(result.gpuTimingSource)) | \(formatOptionalText(result.counterFallbackReason)) | \(result.dispatchTracePath ?? "") | \(result.note ?? "") |"
             )
         }
         lines.append("")
         lines.append("## Verifier Dispatch Summary")
         lines.append("")
-        lines.append("| Workload | Stage | Dispatch | Kernel | Samples | CPU p50/p95 | GPU p50/p95 | Exec Widths | TG Widths | Counters |")
-        lines.append("| --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |")
+        lines.append("| Workload | Stage | Dispatch | Kernel | Samples | CPU p50/p95 | GPU p50/p95 | Exec Widths | TG Widths | Counter State | GPU Timing | Fallback |")
+        lines.append("| --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |")
         for result in report.verifierWorkloads {
             for summary in result.dispatchSummaries {
                 lines.append(
-                    "| \(result.workload.name) | \(summary.stage) | \(summary.dispatchLabel) | \(summary.kernelFamily) | \(summary.sampleCount) | \(formatPair(summary.cpu)) | \(formatPair(summary.gpu)) | \(formatWidths(summary.threadExecutionWidths)) | \(formatWidths(summary.threadgroupWidths)) | \(formatCounterStatus(available: summary.counterSamplingAvailable, captured: summary.counterSamplesCaptured)) |"
+                    "| \(result.workload.name) | \(summary.stage) | \(summary.dispatchLabel) | \(summary.kernelFamily) | \(summary.sampleCount) | \(formatPair(summary.cpu)) | \(formatPair(summary.gpu)) | \(formatWidths(summary.threadExecutionWidths)) | \(formatWidths(summary.threadgroupWidths)) | \(formatCounterStatus(summary.counterCaptureState)) | \(formatTimingSource(summary.gpuTimingSource)) | \(formatOptionalText(summary.counterFallbackReason)) |"
                 )
             }
         }
@@ -805,6 +864,9 @@ enum NuMetalQBenchmarks {
             assistedVerifyGPU: nil,
             assistanceMode: "cpu-only",
             counterSamplingAvailable: false,
+            counterCaptureState: .unsupported,
+            gpuTimingSource: MetalGPUTimingSource.unavailable.rawValue,
+            counterFallbackReason: nil,
             dispatchCount: 0,
             dispatchSummaries: [],
             dispatchTracePath: nil,
@@ -881,6 +943,9 @@ enum NuMetalQBenchmarks {
         assistedGPUSamples: [Double],
         assistanceMode: String,
         counterSamplingAvailable: Bool,
+        counterCaptureState: MetalCounterCaptureState,
+        gpuTimingSource: String,
+        counterFallbackReason: String?,
         dispatchSummaries: [DispatchAggregate],
         dispatchTracePath: String?,
         gpuFamilyTag: String,
@@ -900,6 +965,9 @@ enum NuMetalQBenchmarks {
             assistedVerifyGPU: assistedGPUSamples.isEmpty ? nil : summarize(assistedGPUSamples),
             assistanceMode: assistanceMode,
             counterSamplingAvailable: counterSamplingAvailable,
+            counterCaptureState: counterCaptureState,
+            gpuTimingSource: gpuTimingSource,
+            counterFallbackReason: counterFallbackReason,
             dispatchCount: dispatchSummaries.reduce(0) { $0 + $1.sampleCount },
             dispatchSummaries: dispatchSummaries,
             dispatchTracePath: dispatchTracePath,
@@ -942,7 +1010,10 @@ enum NuMetalQBenchmarks {
                 threadExecutionWidths: Array(Set(group.map(\.threadExecutionWidth))).sorted(),
                 threadgroupWidths: Array(Set(group.map(\.threadgroupWidth))).sorted(),
                 counterSamplingAvailable: group.contains(where: \.counterSamplingAvailable),
-                counterSamplesCaptured: group.allSatisfy(\.counterSampleCaptured)
+                counterCaptureState: aggregateCounterCaptureState(group),
+                counterSamplesCaptured: group.allSatisfy(\.counterSampleCaptured),
+                gpuTimingSource: aggregateTimingSource(group),
+                counterFallbackReason: aggregateFallbackReason(group)
             )
         }
         .sorted {
@@ -951,6 +1022,114 @@ enum NuMetalQBenchmarks {
             }
             return $0.stage < $1.stage
         }
+    }
+
+    private static func aggregateCounterCaptureState(
+        _ samples: [MetalDispatchTraceSample]
+    ) -> MetalCounterCaptureState {
+        guard samples.isEmpty == false else { return .unsupported }
+        if samples.allSatisfy(\.counterSampleCaptured) {
+            return .captured
+        }
+        if samples.contains(where: \.counterSamplingAvailable) {
+            return .availableButNotCaptured
+        }
+        return .unsupported
+    }
+
+    private static func aggregateTimingSource(
+        _ samples: [MetalDispatchTraceSample]
+    ) -> String {
+        let unique = Array(Set(samples.map { $0.gpuTimingSource.rawValue })).sorted()
+        if unique.isEmpty {
+            return MetalGPUTimingSource.unavailable.rawValue
+        }
+        return unique.count == 1 ? unique[0] : "mixed"
+    }
+
+    private static func aggregateFallbackReason(
+        _ samples: [MetalDispatchTraceSample]
+    ) -> String? {
+        let unique = Array(Set(samples.compactMap(\.counterFallbackReason))).sorted()
+        guard unique.isEmpty == false else { return nil }
+        return unique.joined(separator: " | ")
+    }
+
+    fileprivate static func makeObservabilitySummary(
+        report: BenchmarkReport,
+        traceReport: BenchmarkDispatchTraceReport
+    ) -> DispatchObservabilitySummary {
+        let samples = traceReport.seal.flatMap(\.samples) + traceReport.verifier.flatMap(\.samples)
+        let fallbackReasons = Array(Set(samples.compactMap(\.counterFallbackReason))).sorted()
+        let timingSourceBreakdown = Dictionary(grouping: samples, by: { $0.gpuTimingSource.rawValue })
+            .map { TimingSourceBreakdownEntry(timingSource: $0.key, dispatchCount: $0.value.count) }
+            .sorted { lhs, rhs in
+                if lhs.dispatchCount == rhs.dispatchCount {
+                    return lhs.timingSource < rhs.timingSource
+                }
+                return lhs.dispatchCount > rhs.dispatchCount
+            }
+
+        let allGPUIdentifiers = (report.sealWorkloads.map { ($0.gpuFamilyTag, $0.gpuName) }
+            + report.verifierWorkloads.map { ($0.gpuFamilyTag, $0.gpuName) })
+            .filter { $0.0 != "unavailable" }
+        let gpuIdentifier = allGPUIdentifiers.first ?? ("unavailable", "unavailable")
+        let counterSamplingAvailable = samples.contains(where: \.counterSamplingAvailable)
+            || report.verifierWorkloads.contains(where: \.counterSamplingAvailable)
+        let capturedDispatches = samples.filter(\.counterSampleCaptured).count
+        let totalDispatches = samples.count
+        let capturedPercentage = totalDispatches == 0
+            ? 0
+            : (Double(capturedDispatches) / Double(totalDispatches)) * 100.0
+
+        return DispatchObservabilitySummary(
+            gpuFamilyTag: gpuIdentifier.0,
+            gpuName: gpuIdentifier.1,
+            counterSamplingAvailable: counterSamplingAvailable,
+            counterCaptureState: aggregateCounterCaptureState(samples),
+            totalDispatches: totalDispatches,
+            counterCapturedDispatches: capturedDispatches,
+            counterCapturedPercentage: capturedPercentage,
+            timingSourceBreakdown: timingSourceBreakdown,
+            counterFallbackReasons: fallbackReasons
+        )
+    }
+
+    private static func defaultCounterCaptureState(
+        counterSamplingAvailable: Bool
+    ) -> MetalCounterCaptureState {
+        counterSamplingAvailable ? .availableButNotCaptured : .unsupported
+    }
+
+    private static func verifierCounterCaptureState(
+        counterSamplingAvailable: Bool,
+        dispatchSamples: [MetalDispatchTraceSample]
+    ) -> MetalCounterCaptureState {
+        dispatchSamples.isEmpty
+            ? defaultCounterCaptureState(counterSamplingAvailable: counterSamplingAvailable)
+            : aggregateCounterCaptureState(dispatchSamples)
+    }
+
+    private static func verifierTimingSource(
+        dispatchSamples: [MetalDispatchTraceSample]
+    ) -> String {
+        dispatchSamples.isEmpty
+            ? MetalGPUTimingSource.unavailable.rawValue
+            : aggregateTimingSource(dispatchSamples)
+    }
+
+    private static func verifierCounterFallbackReason(
+        metalAvailable: Bool,
+        counterSamplingAvailable: Bool,
+        dispatchSamples: [MetalDispatchTraceSample]
+    ) -> String? {
+        if dispatchSamples.isEmpty == false {
+            return aggregateFallbackReason(dispatchSamples)
+        }
+        guard metalAvailable, counterSamplingAvailable == false else {
+            return nil
+        }
+        return "dispatch-boundary counters unsupported on this host; benchmark uses command-buffer timeline for GPU timings"
     }
 
     private static func summarize(_ samples: [Double]) -> TimingSummary {
@@ -1454,9 +1633,17 @@ enum NuMetalQBenchmarks {
         widths.isEmpty ? "n/a" : widths.map(String.init).joined(separator: ",")
     }
 
-    private static func formatCounterStatus(available: Bool, captured: Bool) -> String {
-        if available == false { return "unavailable" }
-        return captured ? "captured" : "available"
+    private static func formatCounterStatus(_ state: MetalCounterCaptureState) -> String {
+        state.rawValue
+    }
+
+    private static func formatTimingSource(_ timingSource: String) -> String {
+        timingSource.isEmpty ? "unavailable" : timingSource
+    }
+
+    private static func formatOptionalText(_ value: String?) -> String {
+        guard let value, value.isEmpty == false else { return "n/a" }
+        return value
     }
 
     private static let signerKey = SymmetricKey(data: Data(repeating: 0x5A, count: 32))
@@ -1907,6 +2094,9 @@ private struct VerifierBenchmarkResult: Codable {
     let assistedVerifyGPU: TimingSummary?
     let assistanceMode: String
     let counterSamplingAvailable: Bool
+    let counterCaptureState: MetalCounterCaptureState
+    let gpuTimingSource: String
+    let counterFallbackReason: String?
     let dispatchCount: Int
     let dispatchSummaries: [DispatchAggregate]
     let dispatchTracePath: String?
@@ -1925,7 +2115,10 @@ private struct DispatchAggregate: Codable {
     let threadExecutionWidths: [Int]
     let threadgroupWidths: [Int]
     let counterSamplingAvailable: Bool
+    let counterCaptureState: MetalCounterCaptureState
     let counterSamplesCaptured: Bool
+    let gpuTimingSource: String
+    let counterFallbackReason: String?
 }
 
 private struct WorkloadDispatchTrace: Codable {
@@ -1937,6 +2130,7 @@ private struct WorkloadDispatchTrace: Codable {
 
 private struct BenchmarkDispatchTraceReport: Codable {
     let generatedAt: String
+    var observability: DispatchObservabilitySummary
     var seal: [WorkloadDispatchTrace]
     var verifier: [WorkloadDispatchTrace]
 }
@@ -1948,8 +2142,26 @@ private struct BenchmarkReport: Codable {
     var lastUpdatedAt: String
     var completedAt: String?
     var failure: String?
+    var verifierObservability: DispatchObservabilitySummary
     var sealWorkloads: [SealBenchmarkResult]
     var verifierWorkloads: [VerifierBenchmarkResult]
+}
+
+private struct DispatchObservabilitySummary: Codable {
+    let gpuFamilyTag: String
+    let gpuName: String
+    let counterSamplingAvailable: Bool
+    let counterCaptureState: MetalCounterCaptureState
+    let totalDispatches: Int
+    let counterCapturedDispatches: Int
+    let counterCapturedPercentage: Double
+    let timingSourceBreakdown: [TimingSourceBreakdownEntry]
+    let counterFallbackReasons: [String]
+}
+
+private struct TimingSourceBreakdownEntry: Codable {
+    let timingSource: String
+    let dispatchCount: Int
 }
 
 private struct BenchmarkArtifactPaths {
@@ -2023,11 +2235,23 @@ private actor BenchmarkArtifactWriter {
             lastUpdatedAt: Self.timestamp(),
             completedAt: nil,
             failure: nil,
+            verifierObservability: DispatchObservabilitySummary(
+                gpuFamilyTag: "unavailable",
+                gpuName: "unavailable",
+                counterSamplingAvailable: false,
+                counterCaptureState: .unsupported,
+                totalDispatches: 0,
+                counterCapturedDispatches: 0,
+                counterCapturedPercentage: 0,
+                timingSourceBreakdown: [],
+                counterFallbackReasons: []
+            ),
             sealWorkloads: initialSealWorkloads,
             verifierWorkloads: initialVerifierWorkloads
         )
         self.traceReport = BenchmarkDispatchTraceReport(
             generatedAt: metadata.generatedAt,
+            observability: report.verifierObservability,
             seal: [],
             verifier: []
         )
@@ -2067,6 +2291,7 @@ private actor BenchmarkArtifactWriter {
             lastUpdatedAt: Self.timestamp(),
             completedAt: report.completedAt,
             failure: report.failure,
+            verifierObservability: report.verifierObservability,
             sealWorkloads: seal,
             verifierWorkloads: report.verifierWorkloads
         )
@@ -2090,6 +2315,7 @@ private actor BenchmarkArtifactWriter {
             lastUpdatedAt: Self.timestamp(),
             completedAt: report.completedAt,
             failure: report.failure,
+            verifierObservability: report.verifierObservability,
             sealWorkloads: report.sealWorkloads,
             verifierWorkloads: verifier
         )
@@ -2198,6 +2424,9 @@ private actor BenchmarkArtifactWriter {
                 assistedVerifyGPU: result.assistedVerifyGPU,
                 assistanceMode: result.assistanceMode,
                 counterSamplingAvailable: result.counterSamplingAvailable,
+                counterCaptureState: result.counterCaptureState,
+                gpuTimingSource: result.gpuTimingSource,
+                counterFallbackReason: result.counterFallbackReason,
                 dispatchCount: result.dispatchCount,
                 dispatchSummaries: result.dispatchSummaries,
                 dispatchTracePath: result.dispatchTracePath,
@@ -2310,6 +2539,14 @@ private actor BenchmarkArtifactWriter {
         markdownURL: URL,
         dispatchTraceURL: URL
     ) throws {
+        var report = report
+        var traceReport = traceReport
+        let observability = NuMetalQBenchmarks.makeObservabilitySummary(
+            report: report,
+            traceReport: traceReport
+        )
+        report.verifierObservability = observability
+        traceReport.observability = observability
         try encoder.encode(report).write(to: jsonURL, options: [.atomic])
         try encoder.encode(traceReport).write(to: dispatchTraceURL, options: [.atomic])
         try NuMetalQBenchmarks.renderMarkdown(report).write(

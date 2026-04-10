@@ -8,6 +8,7 @@ internal enum MetalArtifactBundle {
         "NuAG64Common",
         "NuFieldKernels",
         "NuCommitKernels",
+        "NuDirectPackedKernels",
         "NuDecompKernels",
         "NuMatrixKernels",
         "NuSumCheckKernels",

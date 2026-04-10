@@ -21,6 +21,7 @@ swift run NuMetalQBenchmarks --list-workloads
 
 - GPU-backed tests and end-to-end proving flows require Apple silicon plus a supported Apple GPU family.
 - CPU-safe tests are the default CI lane.
+- `Scripts/run_apple_silicon_validation.sh [OUTPUT_DIR]` is the deterministic local validation gate for Metal proving and CPU/Metal verification parity.
 - `Scripts/build_metal_artifacts.sh` requires Xcode command-line tools with `xcrun metal` and `xcrun metallib`.
 
 ## Docs Drift

@@ -25,4 +25,4 @@ GPU resource management, typed kernel dispatch, and Metal ABI utilities.
 ## Current Gaps
 
 - `KernelDispatch.swift` is still too large
-- dispatch-boundary counter data still degrades to timeline fallback on unsupported hosts
+- dispatch-boundary counter capture remains host-dependent, but benchmark artifacts now report explicit counter states and timeline fallback reasons

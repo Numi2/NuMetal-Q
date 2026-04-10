@@ -88,6 +88,13 @@ static inline Ag64 ag64_sub(Ag64 lhs, Ag64 rhs) {
     return ag64_add_raw(ag64_sub_raw(AG64_MOD, rhs).value, lhs).value;
 }
 
+static inline Ag64 ag64_neg(Ag64 value) {
+    if (value.lo == 0u && value.hi == 0u) {
+        return value;
+    }
+    return ag64_sub_raw(AG64_MOD, value).value;
+}
+
 static inline Ag64 ag64_mul(Ag64 lhs, Ag64 rhs) {
     uint64_t p00 = uint64_t(lhs.lo) * uint64_t(rhs.lo);
     uint64_t p01 = uint64_t(lhs.lo) * uint64_t(rhs.hi);
@@ -132,6 +139,18 @@ static inline Ag64 ag64_from_u64(uint64_t value) {
 
 static inline uint64_t ag64_to_u64(Ag64 value) {
     return (uint64_t(value.hi) << 32) | uint64_t(value.lo);
+}
+
+static inline Ag64 ag64_from_centered_magnitude(uint64_t magnitude, bool isNegative) {
+    Ag64 value = ag64_from_u64(magnitude);
+    return isNegative && magnitude != 0ull ? ag64_neg(value) : value;
+}
+
+static inline uint64_t ag64_centered_magnitude(Ag64 value) {
+    uint64_t raw = ag64_to_u64(value);
+    uint64_t modulus = ag64_to_u64(AG64_MOD);
+    uint64_t midpoint = modulus / 2ull;
+    return raw <= midpoint ? raw : modulus - raw;
 }
 
 static inline Ag64 ag64_load_soa(

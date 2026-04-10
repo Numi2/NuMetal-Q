@@ -402,6 +402,8 @@ public enum KernelFamily: String, Sendable, Hashable, CaseIterable {
     case sparseRotationCommitBatch = "nu_sparse_rot_commit_batch"
     case ringMultiplyAG64 = "nu_ring_mul_ag64_d64"
     case ringBindFoldBatch = "nu_ring_bind_fold_batch"
+    case directPackedMaskPrepare = "nu_direct_packed_mask_prepare"
+    case directPackedResponseFinalize = "nu_direct_packed_response_finalize"
     case matrixLift = "nu_matrix_lift"
     case sumCheckPartial = "nu_sumcheck_partial"
     case piRLCFold = "nu_pirlc_fold"

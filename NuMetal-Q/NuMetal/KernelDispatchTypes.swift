@@ -2,10 +2,25 @@ import Foundation
 import Metal
 
 /// Dispatcher timing for a single Metal compute submission.
+public enum MetalGPUTimingSource: String, Sendable, Codable {
+    case unavailable = "unavailable"
+    case dispatchBoundaryCounter = "dispatch-boundary-counter"
+    case commandBufferTimeline = "command-buffer-timeline"
+}
+
+public enum MetalCounterCaptureState: String, Sendable, Codable {
+    case unsupported = "unsupported"
+    case availableButNotCaptured = "available-but-not-captured"
+    case captured = "captured"
+}
+
 public struct MetalDispatchTiming: Sendable {
     public let cpuMilliseconds: Double
     public let gpuMilliseconds: Double?
     public let counterSamplingAvailable: Bool
+    public let counterCaptureState: MetalCounterCaptureState
+    public let gpuTimingSource: MetalGPUTimingSource
+    public let counterFallbackReason: String?
     public let gpuStartOffsetMicroseconds: Double?
     public let gpuEndOffsetMicroseconds: Double?
     public let threadExecutionWidth: Int
@@ -16,6 +31,9 @@ public struct MetalDispatchTiming: Sendable {
         cpuMilliseconds: Double,
         gpuMilliseconds: Double?,
         counterSamplingAvailable: Bool = false,
+        counterCaptureState: MetalCounterCaptureState = .unsupported,
+        gpuTimingSource: MetalGPUTimingSource = .unavailable,
+        counterFallbackReason: String? = nil,
         gpuStartOffsetMicroseconds: Double? = nil,
         gpuEndOffsetMicroseconds: Double? = nil,
         threadExecutionWidth: Int,
@@ -25,6 +43,9 @@ public struct MetalDispatchTiming: Sendable {
         self.cpuMilliseconds = cpuMilliseconds
         self.gpuMilliseconds = gpuMilliseconds
         self.counterSamplingAvailable = counterSamplingAvailable
+        self.counterCaptureState = counterCaptureState
+        self.gpuTimingSource = gpuTimingSource
+        self.counterFallbackReason = counterFallbackReason
         self.gpuStartOffsetMicroseconds = gpuStartOffsetMicroseconds
         self.gpuEndOffsetMicroseconds = gpuEndOffsetMicroseconds
         self.threadExecutionWidth = threadExecutionWidth

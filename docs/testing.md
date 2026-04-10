@@ -20,13 +20,11 @@ swift run NuMetalQBenchmarks --list-workloads
 
 ## 2. Apple-silicon validation lane
 
-Run the broader suite on a supported Apple-silicon host:
+This is the release-readiness gate for proving and Metal-assisted verification on a supported Apple-silicon host.
+Use the scripted entrypoint so the output locations stay deterministic:
 
 ```bash
-swift test
-Scripts/build_metal_artifacts.sh
-swift run NuMetalQAcceptanceDemo
-swift run NuMetalQBenchmarks --iterations 1 --warmups 0
+Scripts/run_apple_silicon_validation.sh [OUTPUT_DIR]
 ```
 
 ## Current Test Coverage Emphasis
@@ -37,4 +35,4 @@ swift run NuMetalQBenchmarks --iterations 1 --warmups 0
 - sync envelope encryption, attestation, and replay defense
 - vault serialization and attestation/security boundaries
 
-GPU-assisted proving and full end-to-end flows remain best validated on local Apple-silicon hardware.
+The CI lane is the correctness floor. GPU-assisted proving, direct-packed Metal final-opening work, and end-to-end CPU/Metal parity remain validated in the Apple-silicon lane.

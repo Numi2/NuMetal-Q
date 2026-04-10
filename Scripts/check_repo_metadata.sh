@@ -64,6 +64,7 @@ require_line "- \`MetalStorageLayout.currentVersion\` is now \`${metal_storage_l
 require_line "- \`ShapePack.currentVersion\` is now \`${shape_pack_version}\`." "METAL_FIRST_VNEXT.md"
 require_line "- \`SealProof.currentVersion\` is now \`${seal_proof_version}\`." "METAL_FIRST_VNEXT.md"
 require_line "- \`PublicSealProof.currentVersion\` is now \`${public_seal_proof_version}\`." "METAL_FIRST_VNEXT.md"
+require_line "- \`Scripts/run_apple_silicon_validation.sh [OUTPUT_DIR]\`" "METAL_FIRST_VNEXT.md"
 
 while IFS= read -r filter; do
   if [[ "$filter" == *"/"* ]]; then

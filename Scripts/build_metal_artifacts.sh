@@ -37,6 +37,7 @@ for shader in \
   "$SHADER_DIR/NuAG64Common.metal" \
   "$SHADER_DIR/NuFieldKernels.metal" \
   "$SHADER_DIR/NuCommitKernels.metal" \
+  "$SHADER_DIR/NuDirectPackedKernels.metal" \
   "$SHADER_DIR/NuDecompKernels.metal" \
   "$SHADER_DIR/NuMatrixKernels.metal" \
   "$SHADER_DIR/NuSumCheckKernels.metal"; do
@@ -47,6 +48,7 @@ cat \
   "$SHADER_DIR/NuAG64Common.metal" \
   "$SHADER_DIR/NuFieldKernels.metal" \
   "$SHADER_DIR/NuCommitKernels.metal" \
+  "$SHADER_DIR/NuDirectPackedKernels.metal" \
   "$SHADER_DIR/NuDecompKernels.metal" \
   "$SHADER_DIR/NuMatrixKernels.metal" \
   "$SHADER_DIR/NuSumCheckKernels.metal" \
@@ -63,6 +65,7 @@ cat > "$MANIFEST_FILE" <<'JSON'
     "NuAG64Common",
     "NuFieldKernels",
     "NuCommitKernels",
+    "NuDirectPackedKernels",
     "NuDecompKernels",
     "NuMatrixKernels",
     "NuSumCheckKernels"

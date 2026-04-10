@@ -76,12 +76,24 @@
   - residual block count per chunk
   - accumulator and rejection transcript domains
   - security profile digest
+- Direct-packed final-opening execution now uses dedicated protocol Metal kernels for:
+  - Gaussian mask materialization from transcript-derived seed buffers
+  - mask-image vector preparation
+  - response formation
+  - rejection-metric preparation and bound checks
 - `SealProof.currentVersion` is now `9`.
 - `PublicSealProof.currentVersion` is now `5`.
 - Verifier-stage benchmarking now reports CPU vs Metal-assisted timings for:
   - PiCCS verify
   - PiRLC verify
   - PiDEC verify
+  - explicit counter-capture state and GPU timing source
+
+## Current Verification State
+- Semantic Hachi verification is the implementation path for end-to-end seal verification.
+- CPU-only verification remains the reference oracle for parity and tests.
+- Metal-assisted verification is the default accelerated path when a Metal context is available.
+- Benchmark reports surface explicit CPU-only and Metal-assisted parity results.
 
 ## Correctness Fixes Applied During Implementation
 - Fixed the negacyclic rotation-matrix convention so `RotationMatrix.apply(to:)` matches ring multiplication exactly.
@@ -104,6 +116,7 @@
 - `swift run NuMetalQBenchmarks --help`
 - `swift run NuMetalQBenchmarks --list-workloads`
 - `swift run NuMetalQBenchmarks --iterations 1 --warmups 0 --output /tmp/numeq-bench-smoke`
+- `Scripts/run_apple_silicon_validation.sh [OUTPUT_DIR]`
 
 ## New or Expanded Coverage
 - SoA ABI round-trip tests for `Fq`, `Fq2`, and `Rq`

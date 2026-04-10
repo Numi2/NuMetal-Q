@@ -38,7 +38,7 @@ internal enum ShortLinearWitnessPoKError: Error, Sendable {
 
 internal enum ShortLinearWitnessPoK {
     private struct DiscreteGaussianTable {
-        let cumulativeMagnitudes: [Double]
+        let cumulativeMagnitudeThresholds: [UInt64]
     }
 
     private static let discreteGaussianSupportMultiplier = 16.0
@@ -383,57 +383,53 @@ internal enum ShortLinearWitnessPoK {
         }
 
         for restartNonce in UInt32(0)..<UInt32(statement.parameters.maxRestartCount) {
-            let maskShort = sampleMaskVectors(
+            let shortSeedMaterial = makeMaskSeedMaterial(
                 count: statement.chunkCount,
-                sigma: statement.parameters.finalMaskSigma,
                 statementDigest: statement.statementDigest,
                 evaluationWeightDigest: statement.evaluationWeightDigest,
                 bindingCommitment: initialBindingCommitment,
                 restartNonce: restartNonce,
                 label: "short"
             )
-            let maskOuter = sampleMaskVectors(
+            let outerSeedMaterial = makeMaskSeedMaterial(
                 count: statement.chunkCount,
-                sigma: statement.parameters.finalMaskSigma,
                 statementDigest: statement.statementDigest,
                 evaluationWeightDigest: statement.evaluationWeightDigest,
                 bindingCommitment: initialBindingCommitment,
                 restartNonce: restartNonce,
                 label: "outer"
             )
-
-            let bindingMaskVector = zip(finalBindingCoefficients, maskShort).map { coefficient, mask in
-                coefficient * mask
-            }
-            let relationMaskVector = zip3(finalRelationShortCoefficients, maskShort, finalRelationOuterCoefficients, maskOuter).map {
-                $0.0 * $0.1 + $0.2 * $0.3
-            }
-            let evaluationMask = zip(maskShort, finalEvaluationWeights).reduce(Fq.zero) { partial, pair in
-                partial + constantTermInnerProduct(pair.0, pair.1)
-            }
-            let outerMaskVector = zip(finalOuterCoefficients, maskOuter).map { coefficient, mask in
-                coefficient * mask
-            }
+            let preparedOpening = try finalOpeningPreparation(
+                statement: statement,
+                shortSeedMaterial: shortSeedMaterial,
+                outerSeedMaterial: outerSeedMaterial,
+                finalBindingCoefficients: finalBindingCoefficients,
+                finalRelationShortCoefficients: finalRelationShortCoefficients,
+                finalRelationOuterCoefficients: finalRelationOuterCoefficients,
+                finalEvaluationWeights: finalEvaluationWeights,
+                finalOuterCoefficients: finalOuterCoefficients,
+                context: context
+            )
 
             let finalOpeningTemplate = ShortLinearWitnessFinalOpening(
                 bindingMaskCommitment: try commitImage(
                     key: statement.bindingImageKey,
-                    values: bindingMaskVector,
+                    values: preparedOpening.bindingMaskVector,
                     context: context
                 ),
                 relationMaskCommitment: try commitImage(
                     key: statement.relationImageKey,
-                    values: relationMaskVector,
+                    values: preparedOpening.relationMaskVector,
                     context: context
                 ),
                 evaluationMaskCommitment: try commitImage(
                     key: statement.evaluationImageKey,
-                    values: [RingElement(constant: evaluationMask)],
+                    values: [RingElement(constant: preparedOpening.evaluationMask)],
                     context: context
                 ),
                 outerMaskCommitment: try commitImage(
                     key: statement.outerImageKey,
-                    values: outerMaskVector,
+                    values: preparedOpening.outerMaskVector,
                     context: context
                 ),
                 shortResponses: [],
@@ -444,25 +440,20 @@ internal enum ShortLinearWitnessPoK {
             sigmaTranscript.absorbLabel("restart=\(restartNonce)")
             absorb(finalOpening: finalOpeningTemplate, transcript: &sigmaTranscript)
             let sigmaChallenge = responseChallenge(transcript: &sigmaTranscript)
-
-            let shortResponses = zip(maskShort, residualShort).map { mask, residual in
-                mask + sigmaChallenge * residual
-            }
-            let outerResponses = zip(maskOuter, residualOuter).map { mask, residual in
-                mask + sigmaChallenge * residual
-            }
-            guard responsesStayBound(
-                shortResponses: shortResponses,
-                outerResponses: outerResponses,
-                bound: statement.parameters.maxAcceptedResponseBound
-            ) else {
+            let finalizedResponses = try finalOpeningResponses(
+                statement: statement,
+                sigmaChallenge: sigmaChallenge,
+                shortMasks: preparedOpening.shortMasks,
+                outerMasks: preparedOpening.outerMasks,
+                residualShort: residualShort,
+                residualOuter: residualOuter,
+                context: context
+            )
+            guard finalizedResponses.metrics.responseBoundExceeded == false else {
                 continue
             }
             guard rejectionAccepts(
-                maskShort: maskShort,
-                maskOuter: maskOuter,
-                shortResponses: shortResponses,
-                outerResponses: outerResponses,
+                metrics: finalizedResponses.metrics,
                 sigma: statement.parameters.finalMaskSigma,
                 rejectionSlack: statement.parameters.rejectionSlack,
                 statement: statement,
@@ -477,8 +468,8 @@ internal enum ShortLinearWitnessPoK {
                 relationMaskCommitment: finalOpeningTemplate.relationMaskCommitment,
                 evaluationMaskCommitment: finalOpeningTemplate.evaluationMaskCommitment,
                 outerMaskCommitment: finalOpeningTemplate.outerMaskCommitment,
-                shortResponses: shortResponses,
-                outerResponses: outerResponses
+                shortResponses: finalizedResponses.shortResponses,
+                outerResponses: finalizedResponses.outerResponses
             )
             let proof = ShortLinearWitnessProof(
                 initialBindingCommitment: initialBindingCommitment,
@@ -827,56 +818,220 @@ internal enum ShortLinearWitnessPoK {
         return RingElement(coeffs: coeffs)
     }
 
-    private static func sampleMaskVectors(
+    private static func finalOpeningPreparation(
+        statement: ShortLinearWitnessStatement,
+        shortSeedMaterial: DirectPackedMaskSeedMaterial,
+        outerSeedMaterial: DirectPackedMaskSeedMaterial,
+        finalBindingCoefficients: [RingElement],
+        finalRelationShortCoefficients: [RingElement],
+        finalRelationOuterCoefficients: [RingElement],
+        finalEvaluationWeights: [RingElement],
+        finalOuterCoefficients: [RingElement],
+        context: MetalContext?
+    ) throws -> DirectPackedFinalOpeningPreparation {
+        guard let context else {
+            return cpuFinalOpeningPreparation(
+                statement: statement,
+                shortSeedMaterial: shortSeedMaterial,
+                outerSeedMaterial: outerSeedMaterial,
+                finalBindingCoefficients: finalBindingCoefficients,
+                finalRelationShortCoefficients: finalRelationShortCoefficients,
+                finalRelationOuterCoefficients: finalRelationOuterCoefficients,
+                finalEvaluationWeights: finalEvaluationWeights,
+                finalOuterCoefficients: finalOuterCoefficients
+            )
+        }
+
+        do {
+            return try DirectPackedFinalOpeningMetal.prepare(
+                statement: statement,
+                shortSeedMaterial: shortSeedMaterial,
+                outerSeedMaterial: outerSeedMaterial,
+                finalBindingCoefficients: finalBindingCoefficients,
+                finalRelationShortCoefficients: finalRelationShortCoefficients,
+                finalRelationOuterCoefficients: finalRelationOuterCoefficients,
+                finalEvaluationWeights: finalEvaluationWeights,
+                finalOuterCoefficients: finalOuterCoefficients,
+                context: context,
+                gaussianThresholds: discreteGaussianTable(for: statement.parameters.finalMaskSigma).cumulativeMagnitudeThresholds
+            )
+        } catch {
+            return cpuFinalOpeningPreparation(
+                statement: statement,
+                shortSeedMaterial: shortSeedMaterial,
+                outerSeedMaterial: outerSeedMaterial,
+                finalBindingCoefficients: finalBindingCoefficients,
+                finalRelationShortCoefficients: finalRelationShortCoefficients,
+                finalRelationOuterCoefficients: finalRelationOuterCoefficients,
+                finalEvaluationWeights: finalEvaluationWeights,
+                finalOuterCoefficients: finalOuterCoefficients
+            )
+        }
+    }
+
+    private static func finalOpeningResponses(
+        statement: ShortLinearWitnessStatement,
+        sigmaChallenge: Fq,
+        shortMasks: [RingElement],
+        outerMasks: [RingElement],
+        residualShort: [RingElement],
+        residualOuter: [RingElement],
+        context: MetalContext?
+    ) throws -> DirectPackedFinalOpeningResponses {
+        guard let context else {
+            return cpuFinalOpeningResponses(
+                sigmaChallenge: sigmaChallenge,
+                shortMasks: shortMasks,
+                outerMasks: outerMasks,
+                residualShort: residualShort,
+                residualOuter: residualOuter,
+                bound: statement.parameters.maxAcceptedResponseBound
+            )
+        }
+
+        do {
+            return try DirectPackedFinalOpeningMetal.finalizeResponses(
+                statement: statement,
+                sigmaChallenge: sigmaChallenge,
+                shortMasks: shortMasks,
+                outerMasks: outerMasks,
+                residualShort: residualShort,
+                residualOuter: residualOuter,
+                context: context
+            )
+        } catch {
+            return cpuFinalOpeningResponses(
+                sigmaChallenge: sigmaChallenge,
+                shortMasks: shortMasks,
+                outerMasks: outerMasks,
+                residualShort: residualShort,
+                residualOuter: residualOuter,
+                bound: statement.parameters.maxAcceptedResponseBound
+            )
+        }
+    }
+
+    private static func cpuFinalOpeningPreparation(
+        statement: ShortLinearWitnessStatement,
+        shortSeedMaterial: DirectPackedMaskSeedMaterial,
+        outerSeedMaterial: DirectPackedMaskSeedMaterial,
+        finalBindingCoefficients: [RingElement],
+        finalRelationShortCoefficients: [RingElement],
+        finalRelationOuterCoefficients: [RingElement],
+        finalEvaluationWeights: [RingElement],
+        finalOuterCoefficients: [RingElement]
+    ) -> DirectPackedFinalOpeningPreparation {
+        let shortMasks = materializeMaskVectors(
+            seedMaterial: shortSeedMaterial,
+            sigma: statement.parameters.finalMaskSigma,
+            count: statement.chunkCount
+        )
+        let outerMasks = materializeMaskVectors(
+            seedMaterial: outerSeedMaterial,
+            sigma: statement.parameters.finalMaskSigma,
+            count: statement.chunkCount
+        )
+        let bindingMaskVector = zip(finalBindingCoefficients, shortMasks).map { coefficient, mask in
+            coefficient * mask
+        }
+        let relationMaskVector = zip3(finalRelationShortCoefficients, shortMasks, finalRelationOuterCoefficients, outerMasks).map {
+            $0.0 * $0.1 + $0.2 * $0.3
+        }
+        let evaluationMask = zip(shortMasks, finalEvaluationWeights).reduce(Fq.zero) { partial, pair in
+            partial + constantTermInnerProduct(pair.0, pair.1)
+        }
+        let outerMaskVector = zip(finalOuterCoefficients, outerMasks).map { coefficient, mask in
+            coefficient * mask
+        }
+        return DirectPackedFinalOpeningPreparation(
+            shortMasks: shortMasks,
+            outerMasks: outerMasks,
+            bindingMaskVector: bindingMaskVector,
+            relationMaskVector: relationMaskVector,
+            evaluationMask: evaluationMask,
+            outerMaskVector: outerMaskVector
+        )
+    }
+
+    private static func cpuFinalOpeningResponses(
+        sigmaChallenge: Fq,
+        shortMasks: [RingElement],
+        outerMasks: [RingElement],
+        residualShort: [RingElement],
+        residualOuter: [RingElement],
+        bound: UInt64
+    ) -> DirectPackedFinalOpeningResponses {
+        let shortResponses = zip(shortMasks, residualShort).map { mask, residual in
+            mask + sigmaChallenge * residual
+        }
+        let outerResponses = zip(outerMasks, residualOuter).map { mask, residual in
+            mask + sigmaChallenge * residual
+        }
+        return DirectPackedFinalOpeningResponses(
+            shortResponses: shortResponses,
+            outerResponses: outerResponses,
+            metrics: responseMetrics(
+                maskShort: shortMasks,
+                maskOuter: outerMasks,
+                shortResponses: shortResponses,
+                outerResponses: outerResponses,
+                bound: bound
+            )
+        )
+    }
+
+    private static func makeMaskSeedMaterial(
         count: Int,
-        sigma: UInt32,
         statementDigest: [UInt8],
         evaluationWeightDigest: [UInt8],
         bindingCommitment: AjtaiCommitment,
         restartNonce: UInt32,
         label: String
+    ) -> DirectPackedMaskSeedMaterial {
+        var magnitudeRaw = [UInt64]()
+        var signRaw = [UInt64]()
+        magnitudeRaw.reserveCapacity(count * RingElement.degree)
+        signRaw.reserveCapacity(count * RingElement.degree)
+        for vectorIndex in 0..<count {
+            for coefficientIndex in 0..<RingElement.degree {
+                let seedPair = maskSeedPair(
+                    statementDigest: statementDigest,
+                    evaluationWeightDigest: evaluationWeightDigest,
+                    bindingCommitment: bindingCommitment,
+                    restartNonce: restartNonce,
+                    label: label,
+                    vectorIndex: vectorIndex,
+                    coefficientIndex: coefficientIndex
+                )
+                magnitudeRaw.append(seedPair.magnitudeRaw)
+                signRaw.append(seedPair.signRaw)
+            }
+        }
+        return DirectPackedMaskSeedMaterial(
+            magnitudeRaw: magnitudeRaw,
+            signRaw: signRaw
+        )
+    }
+
+    private static func materializeMaskVectors(
+        seedMaterial: DirectPackedMaskSeedMaterial,
+        sigma: UInt32,
+        count: Int
     ) -> [RingElement] {
         (0..<count).map { vectorIndex in
-            sampleMaskRing(
-                sigma: sigma,
-                statementDigest: statementDigest,
-                evaluationWeightDigest: evaluationWeightDigest,
-                bindingCommitment: bindingCommitment,
-                restartNonce: restartNonce,
-                label: label,
-                vectorIndex: vectorIndex
-            )
+            let coeffs = (0..<RingElement.degree).map { coefficientIndex in
+                let flatIndex = vectorIndex * RingElement.degree + coefficientIndex
+                return discreteGaussianCoefficient(
+                    sigma: sigma,
+                    magnitudeRaw: seedMaterial.magnitudeRaw[flatIndex],
+                    signRaw: seedMaterial.signRaw[flatIndex]
+                )
+            }
+            return RingElement(coeffs: coeffs)
         }
     }
 
-    private static func sampleMaskRing(
-        sigma: UInt32,
-        statementDigest: [UInt8],
-        evaluationWeightDigest: [UInt8],
-        bindingCommitment: AjtaiCommitment,
-        restartNonce: UInt32,
-        label: String,
-        vectorIndex: Int
-    ) -> RingElement {
-        let coeffs = (0..<RingElement.degree).map { coefficientIndex in
-            discreteGaussianCoefficient(
-                sigma: sigma,
-                statementDigest: statementDigest,
-                evaluationWeightDigest: evaluationWeightDigest,
-                bindingCommitment: bindingCommitment,
-                restartNonce: restartNonce,
-                label: label,
-                vectorIndex: vectorIndex,
-                coefficientIndex: coefficientIndex
-            )
-        }
-        return RingElement(coeffs: coeffs)
-    }
-
-    // Inverse-CDF sampler over a centered integer Gaussian with negligible tail
-    // truncation at 16*sigma, then reduced coefficientwise into Fq.
-    private static func discreteGaussianCoefficient(
-        sigma: UInt32,
+    private static func maskSeedPair(
         statementDigest: [UInt8],
         evaluationWeightDigest: [UInt8],
         bindingCommitment: AjtaiCommitment,
@@ -884,7 +1039,7 @@ internal enum ShortLinearWitnessPoK {
         label: String,
         vectorIndex: Int,
         coefficientIndex: Int
-    ) -> Fq {
+    ) -> (magnitudeRaw: UInt64, signRaw: UInt64) {
         var writer = BinaryWriter()
         writer.appendLengthPrefixed(statementDigest)
         writer.appendLengthPrefixed(evaluationWeightDigest)
@@ -898,8 +1053,19 @@ internal enum ShortLinearWitnessPoK {
             domain: "NuMeQ.Decider.Hachi.DirectPacked.GaussianMask",
             count: 16
         )
-        let magnitudeRaw = LittleEndianCodec.uint64(from: digest[0..<8])
-        let signRaw = LittleEndianCodec.uint64(from: digest[8..<16])
+        return (
+            magnitudeRaw: LittleEndianCodec.uint64(from: digest[0..<8]),
+            signRaw: LittleEndianCodec.uint64(from: digest[8..<16])
+        )
+    }
+
+    // Inverse-CDF sampler over a centered integer Gaussian with negligible tail
+    // truncation at 16*sigma, then reduced coefficientwise into Fq.
+    private static func discreteGaussianCoefficient(
+        sigma: UInt32,
+        magnitudeRaw: UInt64,
+        signRaw: UInt64
+    ) -> Fq {
         let magnitude = sampleDiscreteGaussianMagnitude(
             sigma: sigma,
             raw: magnitudeRaw
@@ -915,8 +1081,8 @@ internal enum ShortLinearWitnessPoK {
         raw: UInt64
     ) -> UInt64 {
         let table = discreteGaussianTable(for: sigma)
-        let target = unitInterval(from: raw)
-        return UInt64(lowerBound(in: table.cumulativeMagnitudes, target: target))
+        let target = raw >> 11
+        return UInt64(lowerBound(in: table.cumulativeMagnitudeThresholds, target: target))
     }
 
     private static func discreteGaussianTable(for sigma: UInt32) -> DiscreteGaussianTable {
@@ -941,25 +1107,22 @@ internal enum ShortLinearWitnessPoK {
             }
         }
 
-        var cumulativeMagnitudes = [Double]()
-        cumulativeMagnitudes.reserveCapacity(weights.count)
+        let scale = Double(UInt64(1) << 53)
+        var cumulativeMagnitudeThresholds = [UInt64]()
+        cumulativeMagnitudeThresholds.reserveCapacity(weights.count)
         var running = 0.0
         for weight in weights {
             running += weight / total
-            cumulativeMagnitudes.append(running)
+            cumulativeMagnitudeThresholds.append(UInt64(floor(min(1.0, running) * scale)))
         }
-        if cumulativeMagnitudes.isEmpty == false {
-            cumulativeMagnitudes[cumulativeMagnitudes.count - 1] = 1.0
+        if cumulativeMagnitudeThresholds.isEmpty == false {
+            cumulativeMagnitudeThresholds[cumulativeMagnitudeThresholds.count - 1] = UInt64(1) << 53
         }
 
-        return DiscreteGaussianTable(cumulativeMagnitudes: cumulativeMagnitudes)
+        return DiscreteGaussianTable(cumulativeMagnitudeThresholds: cumulativeMagnitudeThresholds)
     }
 
-    private static func unitInterval(from raw: UInt64) -> Double {
-        Double(raw >> 11) * 0x1p-53
-    }
-
-    private static func lowerBound(in cumulative: [Double], target: Double) -> Int {
+    private static func lowerBound(in cumulative: [UInt64], target: UInt64) -> Int {
         var lower = 0
         var upper = cumulative.count
         while lower < upper {
@@ -974,10 +1137,7 @@ internal enum ShortLinearWitnessPoK {
     }
 
     private static func rejectionAccepts(
-        maskShort: [RingElement],
-        maskOuter: [RingElement],
-        shortResponses: [RingElement],
-        outerResponses: [RingElement],
+        metrics: DirectPackedResponseMetrics,
         sigma: UInt32,
         rejectionSlack: UInt32,
         statement: ShortLinearWitnessStatement,
@@ -986,9 +1146,10 @@ internal enum ShortLinearWitnessPoK {
     ) -> Bool {
         let sigmaSquared = max(1.0, Double(sigma) * Double(sigma))
         let logSlack = log(max(1.0, Double(rejectionSlack)))
-        let maskNorm = squaredNorm(maskShort) + squaredNorm(maskOuter)
-        let responseNorm = squaredNorm(shortResponses) + squaredNorm(outerResponses)
-        let logAcceptance = min(0.0, ((maskNorm - responseNorm) / (2.0 * sigmaSquared)) - logSlack)
+        let logAcceptance = min(
+            0.0,
+            ((Double(metrics.maskNorm) - Double(metrics.responseNorm)) / (2.0 * sigmaSquared)) - logSlack
+        )
 
         var writer = BinaryWriter()
         writer.appendLengthPrefixed(statement.statementDigest)
@@ -1006,11 +1167,30 @@ internal enum ShortLinearWitnessPoK {
         return log(coin) <= logAcceptance
     }
 
-    private static func squaredNorm(_ vectors: [RingElement]) -> Double {
-        vectors.reduce(0.0) { partial, vector in
-            partial + vector.coeffs.reduce(0.0) { coeffPartial, coeff in
-                let centered = Double(coeff.centeredSignedValue)
-                return coeffPartial + centered * centered
+    private static func responseMetrics(
+        maskShort: [RingElement],
+        maskOuter: [RingElement],
+        shortResponses: [RingElement],
+        outerResponses: [RingElement],
+        bound: UInt64
+    ) -> DirectPackedResponseMetrics {
+        let maxResponseMagnitude = (shortResponses + outerResponses)
+            .flatMap(\.coeffs)
+            .map(\.centeredMagnitude)
+            .max() ?? 0
+        return DirectPackedResponseMetrics(
+            maskNorm: squaredNorm(maskShort) + squaredNorm(maskOuter),
+            responseNorm: squaredNorm(shortResponses) + squaredNorm(outerResponses),
+            maxResponseMagnitude: maxResponseMagnitude,
+            responseBoundExceeded: maxResponseMagnitude >= bound
+        )
+    }
+
+    private static func squaredNorm(_ vectors: [RingElement]) -> UInt64 {
+        vectors.reduce(0) { partial, vector in
+            partial + vector.coeffs.reduce(0) { coeffPartial, coeff in
+                let centered = coeff.centeredMagnitude
+                return coeffPartial + (centered * centered)
             }
         }
     }

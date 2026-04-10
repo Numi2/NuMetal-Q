@@ -13,7 +13,10 @@ package struct MetalDispatchTraceSample: Sendable, Codable, Equatable {
     package let threadExecutionWidth: Int
     package let threadgroupWidth: Int
     package let counterSamplingAvailable: Bool
+    package let counterCaptureState: MetalCounterCaptureState
     package let counterSampleCaptured: Bool
+    package let gpuTimingSource: MetalGPUTimingSource
+    package let counterFallbackReason: String?
 
     package init(
         stage: String,
@@ -28,7 +31,10 @@ package struct MetalDispatchTraceSample: Sendable, Codable, Equatable {
         threadExecutionWidth: Int,
         threadgroupWidth: Int,
         counterSamplingAvailable: Bool,
-        counterSampleCaptured: Bool
+        counterCaptureState: MetalCounterCaptureState,
+        counterSampleCaptured: Bool,
+        gpuTimingSource: MetalGPUTimingSource,
+        counterFallbackReason: String?
     ) {
         self.stage = stage
         self.dispatchLabel = dispatchLabel
@@ -42,7 +48,10 @@ package struct MetalDispatchTraceSample: Sendable, Codable, Equatable {
         self.threadExecutionWidth = threadExecutionWidth
         self.threadgroupWidth = threadgroupWidth
         self.counterSamplingAvailable = counterSamplingAvailable
+        self.counterCaptureState = counterCaptureState
         self.counterSampleCaptured = counterSampleCaptured
+        self.gpuTimingSource = gpuTimingSource
+        self.counterFallbackReason = counterFallbackReason
     }
 }
 
@@ -97,7 +106,10 @@ package final class MetalTraceCollector: @unchecked Sendable {
                 threadExecutionWidth: timing.threadExecutionWidth,
                 threadgroupWidth: timing.threadgroupWidth,
                 counterSamplingAvailable: timing.counterSamplingAvailable,
-                counterSampleCaptured: timing.counterSampleCaptured
+                counterCaptureState: timing.counterCaptureState,
+                counterSampleCaptured: timing.counterSampleCaptured,
+                gpuTimingSource: timing.gpuTimingSource,
+                counterFallbackReason: timing.counterFallbackReason
             )
         )
     }
