@@ -10,8 +10,8 @@
 
 ## Implemented Changes
 - `ShapePack` now carries `version`, `gpuLiftedMatrices`, and a signed `gpuArtifactDigest`.
-- `MetalStorageLayout.currentVersion` is now `3`.
-- `ShapePack.currentVersion` is now `3`.
+- `MetalStorageLayout.currentVersion` is now `1`.
+- `ShapePack.currentVersion` is now `4`.
 - `KernelConfig` now includes:
   - `threadgroupSize`
   - `threadExecutionWidthMultiple`
@@ -26,7 +26,7 @@
   - `Fq` as two `UInt32` limbs
   - `Fq2` as two packed base-field pairs
   - `Rq` in SoA 64-lane tiles
-- Production field, matrix, sum-check, PiDEC, seal encode/query, and ring-operation kernels now use the same SoA ABI.
+- Production field, matrix, sum-check, PiDEC, and ring-operation kernels now use the same SoA ABI.
 - All AG64 Metal kernels now share one `NuAG64Common.metal` module instead of carrying duplicated arithmetic helpers.
 - Binary archive cache keys now include:
   - GPU family
@@ -48,7 +48,7 @@
   - PiCCS verifier recomputation
   - PiRLC cross-term and fold recomputation
   - PiDEC decomposition and reconstructed-commitment checks
-- Direct-packed Hachi PCS now routes `packedChunkCount ∈ {1,2,4}` into a separate opening mode.
+- Direct-packed Hachi PCS is now the only supported opening mode.
 - Direct-packed commitments now carry:
   - aggregate `tableCommitment`
   - per-chunk `directPackedOuterCommitments`
@@ -76,13 +76,8 @@
   - residual block count per chunk
   - accumulator and rejection transcript domains
   - security profile digest
-- `SealProof.currentVersion` is now `8`.
-- `PublicSealProof.currentVersion` is now `4`.
-- Hachi PCS now stages codeword extension and leaf hashing in one command buffer before waiting.
-- PCS benchmarking now reports live CPU/Metal timings plus:
-  - threadgroup widths
-  - counter-sampling availability
-  - counter-capture status
+- `SealProof.currentVersion` is now `9`.
+- `PublicSealProof.currentVersion` is now `5`.
 - Verifier-stage benchmarking now reports CPU vs Metal-assisted timings for:
   - PiCCS verify
   - PiRLC verify
@@ -126,9 +121,6 @@
   - PiCCS matrix evaluations
   - PiRLC cross-term commitments
   - PiDEC reconstructed commitments
-- Direct-packed PCS parity for `packedChunkCount = 1`
-- Direct-packed PCS parity for `packedChunkCount = 2`
-- Direct-packed PCS parity for `packedChunkCount = 4`
 - Direct-packed PCS tamper rejection for:
   - final residual short responses
   - initial binding commitment
@@ -137,7 +129,7 @@
 - Rotation-matrix equivalence to negacyclic multiplication
 
 ## Remaining Gaps
-- Timed PCS kernels and verifier-stage benchmarks now emit per-dispatch GPU trace artifacts and rolled-up dispatch summaries, but dispatch-boundary counter capture remains unavailable on this host and currently falls back to GPU timeline reporting.
+- Verifier-stage benchmarks now emit per-dispatch GPU trace artifacts and rolled-up dispatch summaries, but dispatch-boundary counter capture remains unavailable on this host and currently falls back to GPU timeline reporting.
 - The direct-packed prover/verifier now uses the hiding accumulator carrier and transcript-bound rejection acceptance, but Gaussian sampling and rejection still run through host orchestration over existing AG64/Ajtai Metal primitives rather than dedicated protocol-specific kernels.
 - End-to-end seal verification uses a semantic Hachi verifier in both CPU-only and Metal-assisted modes, and benchmark reports surface explicit CPU/Metal verification parity. Metal-assisted verification remains the canonical default path on supported Apple silicon; CPU-only remains the reference oracle for parity and tests.
 - CI currently exercises a CPU-safe lane plus CLI smoke checks; the full proving/Metal path still depends on local Apple-silicon validation.
