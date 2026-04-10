@@ -35,7 +35,7 @@ enum NuMetalQBenchmarks {
             iterations: options.iterations,
             warmups: options.warmups
         )
-        let sealScaffolds = options.sealWorkloads.map(makeSealScaffold)
+        let sealScaffolds = try options.sealWorkloads.map(makeSealScaffold)
         let artifactWriter = try BenchmarkArtifactWriter(
             outputDirectory: outputDirectory,
             metadata: metadata,
@@ -90,6 +90,9 @@ enum NuMetalQBenchmarks {
             var fuseFailure: String?
             var verificationParity: HachiVerificationParity = metalInfo == nil ? .unavailable : .matched
             var parityNote: String?
+            var preflightMaxMagnitude: UInt64 = 0
+            var representabilityStatus: BenchmarkRepresentabilityStatus = .pending
+            var representabilityNote: String?
 
             try await artifactWriter.updateSeal(
                 makeSealResult(
@@ -114,8 +117,12 @@ enum NuMetalQBenchmarks {
                     assistedVerifyGPUSamples: assistedVerifyGPUSamples,
                     verifyMode: metalInfo == nil ? "cpu-only" : "cpu-only+metal-assisted",
                     verificationParity: verificationParity,
+                    witnessBudget: scaffold.witnessBudget,
+                    preflightMaxMagnitude: preflightMaxMagnitude,
+                    representabilityStatus: representabilityStatus,
                     dispatchTracePath: await artifactWriter.dispatchTracePath(),
                     parityNote: parityNote,
+                    representabilityNote: representabilityNote,
                     fuseFailure: fuseFailure
                 ),
                 at: workloadIndex
@@ -134,6 +141,54 @@ enum NuMetalQBenchmarks {
                     seedOne: 11 + UInt64(iteration * 2),
                     seedTwo: 29 + UInt64(iteration * 2)
                 )
+                do {
+                    let firstPreflight = try preflightWitnessRepresentability(
+                        inputs.firstWitness,
+                        workloadName: fixture.workload.name
+                    )
+                    let secondPreflight = try preflightWitnessRepresentability(
+                        inputs.secondWitness,
+                        workloadName: fixture.workload.name
+                    )
+                    preflightMaxMagnitude = max(preflightMaxMagnitude, max(firstPreflight, secondPreflight))
+                    representabilityStatus = .verified
+                    representabilityNote = "guard=\(fixture.witnessBudget.guardBand) source<=\(fixture.witnessBudget.sourceValueUpperBound) derived<=\(fixture.witnessBudget.derivedValueUpperBound)"
+                } catch {
+                    representabilityStatus = .failed
+                    representabilityNote = String(describing: error)
+                    let failedSnapshot = makeSealResult(
+                        workload: fixture.workload,
+                        status: .failed,
+                        completedIterations: iteration,
+                        expectedIterations: expectedIterations,
+                        completedSamples: max(0, iteration - options.warmups),
+                        expectedSamples: options.iterations,
+                        gpuFamilyTag: metalInfo?.gpuFamilyTag ?? "unavailable",
+                        gpuName: metalInfo?.device.name ?? "unavailable",
+                        publicProofBytes: publicProofBytes,
+                        resumeArtifactBytes: resumeArtifactBytes,
+                        totalExportBytes: totalExportBytes,
+                        peakRSSBytes: peakRSSBytes,
+                        seedOneSamples: seedOneSamples,
+                        seedTwoSamples: seedTwoSamples,
+                        fuseSamples: fuseSamples,
+                        sealSamples: sealSamples,
+                        cpuVerifySamples: cpuVerifySamples,
+                        assistedVerifySamples: assistedVerifySamples,
+                        assistedVerifyGPUSamples: assistedVerifyGPUSamples,
+                        verifyMode: metalInfo == nil ? "cpu-only" : "cpu-only+metal-assisted",
+                        verificationParity: verificationParity,
+                        witnessBudget: fixture.witnessBudget,
+                        preflightMaxMagnitude: preflightMaxMagnitude,
+                        representabilityStatus: representabilityStatus,
+                        dispatchTracePath: await artifactWriter.dispatchTracePath(),
+                        parityNote: parityNote,
+                        representabilityNote: representabilityNote,
+                        fuseFailure: fuseFailure
+                    )
+                    try await artifactWriter.updateSeal(failedSnapshot, at: workloadIndex)
+                    throw error
+                }
                 let context = await engine.createContext(
                     compiledShape: fixture.compiledShape,
                     policy: .standard,
@@ -256,8 +311,12 @@ enum NuMetalQBenchmarks {
                         assistedVerifyGPUSamples: assistedVerifyGPUSamples,
                         verifyMode: metalInfo == nil ? "cpu-only" : "cpu-only+metal-assisted",
                         verificationParity: verificationParity,
+                        witnessBudget: fixture.witnessBudget,
+                        preflightMaxMagnitude: preflightMaxMagnitude,
+                        representabilityStatus: representabilityStatus,
                         dispatchTracePath: await artifactWriter.dispatchTracePath(),
                         parityNote: parityNote,
+                        representabilityNote: representabilityNote,
                         fuseFailure: fuseFailure
                     )
                     try await artifactWriter.updateSeal(failedSnapshot, at: workloadIndex)
@@ -314,8 +373,12 @@ enum NuMetalQBenchmarks {
                             assistedVerifyGPUSamples: assistedVerifyGPUSamples,
                             verifyMode: metalInfo == nil ? "cpu-only" : "cpu-only+metal-assisted",
                             verificationParity: verificationParity,
+                            witnessBudget: fixture.witnessBudget,
+                            preflightMaxMagnitude: preflightMaxMagnitude,
+                            representabilityStatus: representabilityStatus,
                             dispatchTracePath: await artifactWriter.dispatchTracePath(),
                             parityNote: parityNote,
+                            representabilityNote: representabilityNote,
                             fuseFailure: fuseFailure
                         )
                         try await artifactWriter.updateSeal(failedSnapshot, at: workloadIndex)
@@ -367,8 +430,12 @@ enum NuMetalQBenchmarks {
                     assistedVerifyGPUSamples: assistedVerifyGPUSamples,
                     verifyMode: metalInfo == nil ? "cpu-only" : "cpu-only+metal-assisted",
                     verificationParity: verificationParity,
+                    witnessBudget: fixture.witnessBudget,
+                    preflightMaxMagnitude: preflightMaxMagnitude,
+                    representabilityStatus: representabilityStatus,
                     dispatchTracePath: await artifactWriter.dispatchTracePath(),
                     parityNote: parityNote,
+                    representabilityNote: representabilityNote,
                     fuseFailure: fuseFailure
                 )
                 try await artifactWriter.updateSeal(snapshot, at: workloadIndex)
@@ -396,8 +463,12 @@ enum NuMetalQBenchmarks {
                 assistedVerifyGPUSamples: assistedVerifyGPUSamples,
                 verifyMode: metalInfo == nil ? "cpu-only" : "cpu-only+metal-assisted",
                 verificationParity: verificationParity,
+                witnessBudget: fixture.witnessBudget,
+                preflightMaxMagnitude: preflightMaxMagnitude,
+                representabilityStatus: representabilityStatus,
                 dispatchTracePath: await artifactWriter.dispatchTracePath(),
                 parityNote: parityNote,
+                representabilityNote: representabilityNote,
                 fuseFailure: fuseFailure
             )
             try await artifactWriter.updateSeal(finalResult, at: workloadIndex)
@@ -782,11 +853,11 @@ enum NuMetalQBenchmarks {
         lines.append("")
         lines.append("## Seal Workflow")
         lines.append("")
-        lines.append("| Workload | State | Progress | Family | Scenario | Rows | Witness | Matrices | NNZ | Density | Gate Deg | Peak RSS | GPU | Public Proof Bytes | Resume Artifact Bytes | Total Export Bytes | Seed-1 p50/p95 | Seed-2 p50/p95 | Fuse p50/p95 | Seal p50/p95 | CPU Verify p50/p95 | Assisted Verify p50/p95 | Assisted GPU p50/p95 | Parity | Trace | Verify Note | Fuse Note |")
-        lines.append("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+        lines.append("| Workload | State | Progress | Family | Scenario | Rows | Witness | Matrices | NNZ | Density | Gate Deg | Peak RSS | GPU | Norm Ceiling | Headroom | Preflight Max | Repr | Public Proof Bytes | Resume Artifact Bytes | Total Export Bytes | Seed-1 p50/p95 | Seed-2 p50/p95 | Fuse p50/p95 | Seal p50/p95 | CPU Verify p50/p95 | Assisted Verify p50/p95 | Assisted GPU p50/p95 | Parity | Trace | Verify Note | Repr Note | Fuse Note |")
+        lines.append("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
         for result in report.sealWorkloads {
             lines.append(
-                "| \(result.workload.name) | \(result.status.rawValue) | \(result.completedIterations)/\(result.expectedIterations) iters, \(result.completedSamples)/\(result.expectedSamples) samples | \(result.workload.family) | \(result.workload.scenario) | \(result.workload.rowCount) | \(result.workload.witnessLength) | \(result.workload.matrixCount) | \(result.workload.totalNNZ) | \(formatDensity(result.workload.nonZeroDensity)) | \(result.workload.maxGateDegree) | \(result.peakRSSBytes) | \(result.gpuFamilyTag) | \(result.publicProofBytes) | \(result.resumeArtifactBytes) | \(result.totalExportBytes) | \(formatPair(result.seedOne)) | \(formatPair(result.seedTwo)) | \(formatPair(result.fuse)) | \(formatPair(result.seal)) | \(formatPair(result.cpuVerify)) | \(formatPair(result.assistedVerify)) | \(formatPair(result.assistedVerifyGPU)) | \(result.verificationParity.rawValue) | \(result.dispatchTracePath ?? "") | \(result.parityNote ?? "") | \(result.fuseFailure ?? "") |"
+                "| \(result.workload.name) | \(result.status.rawValue) | \(result.completedIterations)/\(result.expectedIterations) iters, \(result.completedSamples)/\(result.expectedSamples) samples | \(result.workload.family) | \(result.workload.scenario) | \(result.workload.rowCount) | \(result.workload.witnessLength) | \(result.workload.matrixCount) | \(result.workload.totalNNZ) | \(formatDensity(result.workload.nonZeroDensity)) | \(result.workload.maxGateDegree) | \(result.peakRSSBytes) | \(result.gpuFamilyTag) | \(result.normCeiling) | \(result.generatorHeadroom) | \(result.preflightMaxMagnitude) | \(result.representabilityStatus.rawValue) | \(result.publicProofBytes) | \(result.resumeArtifactBytes) | \(result.totalExportBytes) | \(formatPair(result.seedOne)) | \(formatPair(result.seedTwo)) | \(formatPair(result.fuse)) | \(formatPair(result.seal)) | \(formatPair(result.cpuVerify)) | \(formatPair(result.assistedVerify)) | \(formatPair(result.assistedVerifyGPU)) | \(result.verificationParity.rawValue) | \(result.dispatchTracePath ?? "") | \(result.parityNote ?? "") | \(result.representabilityNote ?? "") | \(result.fuseFailure ?? "") |"
             )
         }
         lines.append("")
@@ -841,8 +912,13 @@ enum NuMetalQBenchmarks {
             assistedVerifyGPU: nil,
             verifyMode: "cpu-only",
             verificationParity: .unavailable,
+            normCeiling: NuProfile.canonical.normBound,
+            generatorHeadroom: 0,
+            preflightMaxMagnitude: 0,
+            representabilityStatus: .pending,
             dispatchTracePath: nil,
             parityNote: nil,
+            representabilityNote: nil,
             fuseFailure: nil
         )
     }
@@ -898,8 +974,12 @@ enum NuMetalQBenchmarks {
         assistedVerifyGPUSamples: [Double],
         verifyMode: String,
         verificationParity: HachiVerificationParity,
+        witnessBudget: SealWitnessBudget,
+        preflightMaxMagnitude: UInt64,
+        representabilityStatus: BenchmarkRepresentabilityStatus,
         dispatchTracePath: String?,
         parityNote: String?,
+        representabilityNote: String?,
         fuseFailure: String?
     ) -> SealBenchmarkResult {
         SealBenchmarkResult(
@@ -924,8 +1004,13 @@ enum NuMetalQBenchmarks {
             assistedVerifyGPU: assistedVerifyGPUSamples.isEmpty ? nil : summarize(assistedVerifyGPUSamples),
             verifyMode: verifyMode,
             verificationParity: verificationParity,
+            normCeiling: witnessBudget.normCeiling,
+            generatorHeadroom: witnessBudget.generatorHeadroom,
+            preflightMaxMagnitude: preflightMaxMagnitude,
+            representabilityStatus: representabilityStatus,
             dispatchTracePath: dispatchTracePath,
             parityNote: parityNote,
+            representabilityNote: representabilityNote,
             fuseFailure: fuseFailure
         )
     }
@@ -1178,7 +1263,7 @@ enum NuMetalQBenchmarks {
         return TimedResult(value: value, milliseconds: Double(elapsed) / 1_000_000.0)
     }
 
-    private static func makeSealScaffold(workload: SealWorkload) -> SealWorkloadScaffold {
+    private static func makeSealScaffold(workload: SealWorkload) throws -> SealWorkloadScaffold {
         let sourceLanes = workload.sourceLanes.enumerated().map { index, lane in
             LaneDescriptor(
                 index: UInt32(index),
@@ -1217,13 +1302,21 @@ enum NuMetalQBenchmarks {
             maxGateDegree: relation.gates.map { $0.matrixIndices.count }.max() ?? 0,
             witnessBitWidth: sourceLanes.map { $0.width.bitWidth }.max() ?? 0
         )
+        let workloadPublicInputs = publicInputs(for: enrichedWorkload)
         return SealWorkloadScaffold(
             workload: enrichedWorkload,
             relation: relation,
             sourceLanes: sourceLanes,
             derivedLane: derivedLane,
             layout: layout,
-            publicInputs: publicInputs(for: enrichedWorkload)
+            publicInputs: workloadPublicInputs,
+            witnessBudget: try makeSealWitnessBudget(
+                workload: enrichedWorkload,
+                relation: relation,
+                sourceLanes: sourceLanes,
+                layout: layout,
+                publicInputs: workloadPublicInputs
+            )
         )
     }
 
@@ -1239,8 +1332,198 @@ enum NuMetalQBenchmarks {
             sourceLanes: scaffold.sourceLanes,
             derivedLane: scaffold.derivedLane,
             layout: scaffold.layout,
-            publicInputs: scaffold.publicInputs
+            publicInputs: scaffold.publicInputs,
+            witnessBudget: scaffold.witnessBudget
         )
+    }
+
+    private static func makeSealWitnessBudget(
+        workload: SealWorkload,
+        relation: CCSRelation,
+        sourceLanes: [LaneDescriptor],
+        layout: ColumnLayout,
+        publicInputs: [Fq]
+    ) throws -> SealWitnessBudget {
+        let normCeiling = NuProfile.canonical.normBound
+        let guardBand = max(256, normCeiling / 32)
+        let guardedCeiling = max(1, normCeiling &- guardBand)
+        let laneCaps = sourceLanes.map { laneGeneratorUpperBound(width: $0.width, boundedBy: guardedCeiling) }
+
+        var safeUpperBound = guardedCeiling
+        var maxPublicContribution: UInt64 = 0
+        var maxFixedLaneContribution: UInt64 = 0
+        var maxVariableCoefficient: UInt64 = 0
+
+        let operandMatrices = Array(relation.matrices.prefix(2))
+        for row in 0..<relation.m {
+            let rowBudgets = operandMatrices.map {
+                operandRowBudget(
+                    matrix: $0,
+                    row: row,
+                    layout: layout,
+                    publicInputs: publicInputs,
+                    sourceLanes: sourceLanes,
+                    laneCaps: laneCaps
+                )
+            }
+            let publicContribution = rowBudgets.reduce(0 as UInt64) { $0 + $1.publicContribution }
+            let fixedLaneContribution = rowBudgets.reduce(0 as UInt64) { $0 + $1.fixedLaneContribution }
+            let variableCoefficientSum = rowBudgets.reduce(0 as UInt64) { $0 + $1.variableCoefficientSum }
+
+            maxPublicContribution = max(maxPublicContribution, publicContribution)
+            maxFixedLaneContribution = max(maxFixedLaneContribution, fixedLaneContribution)
+            maxVariableCoefficient = max(maxVariableCoefficient, variableCoefficientSum)
+
+            let fixedContribution = publicContribution + fixedLaneContribution
+            guard fixedContribution < guardedCeiling else {
+                throw BenchmarkError.workloadGenerationFailed(
+                    "\(workload.name): fixed/public operand contribution \(fixedContribution) exceeds guarded ceiling \(guardedCeiling)"
+                )
+            }
+
+            if variableCoefficientSum > 0 {
+                let candidate = (guardedCeiling - fixedContribution) / variableCoefficientSum
+                safeUpperBound = min(safeUpperBound, candidate)
+            }
+        }
+
+        safeUpperBound = zip(sourceLanes, laneCaps).reduce(safeUpperBound) { partial, pair in
+            min(partial, laneGeneratorUpperBound(width: pair.0.width, boundedBy: pair.1))
+        }
+
+        guard safeUpperBound > 0 else {
+            throw BenchmarkError.workloadGenerationFailed(
+                "\(workload.name): no positive witness amplitude fits the guarded PiDEC ceiling"
+            )
+        }
+
+        let derivedUpperBound = maxDerivedWitnessMagnitude(
+            relation: relation,
+            layout: layout,
+            publicInputs: publicInputs,
+            sourceLanes: sourceLanes,
+            sourceValueUpperBound: safeUpperBound
+        )
+        guard derivedUpperBound < normCeiling else {
+            throw BenchmarkError.workloadGenerationFailed(
+                "\(workload.name): planned derived witness magnitude \(derivedUpperBound) exceeds PiDEC ceiling \(normCeiling)"
+            )
+        }
+
+        return SealWitnessBudget(
+            normCeiling: normCeiling,
+            guardBand: guardBand,
+            sourceValueUpperBound: safeUpperBound,
+            derivedValueUpperBound: derivedUpperBound,
+            generatorHeadroom: normCeiling - derivedUpperBound,
+            publicContributionCeiling: maxPublicContribution,
+            fixedLaneContributionCeiling: maxFixedLaneContribution,
+            variableCoefficientCeiling: maxVariableCoefficient
+        )
+    }
+
+    private static func operandRowBudget(
+        matrix: SparseMatrix,
+        row: Int,
+        layout: ColumnLayout,
+        publicInputs: [Fq],
+        sourceLanes: [LaneDescriptor],
+        laneCaps: [UInt64]
+    ) -> (publicContribution: UInt64, fixedLaneContribution: UInt64, variableCoefficientSum: UInt64) {
+        let start = Int(matrix.rowPtr[row])
+        let end = Int(matrix.rowPtr[row + 1])
+        var publicContribution: UInt64 = 0
+        var fixedLaneContribution: UInt64 = 0
+        var variableCoefficientSum: UInt64 = 0
+
+        for entryIndex in start..<end {
+            let column = Int(matrix.colIdx[entryIndex])
+            let coefficientMagnitude = matrix.values[entryIndex].centeredMagnitude
+            if column < publicInputs.count {
+                publicContribution += coefficientMagnitude * publicInputs[column].centeredMagnitude
+                continue
+            }
+            guard let laneIndex = laneIndex(for: column, layout: layout) else {
+                continue
+            }
+            let laneCap = laneCaps[laneIndex]
+            if laneCap <= 1 {
+                fixedLaneContribution += coefficientMagnitude * laneCap
+            } else {
+                variableCoefficientSum += coefficientMagnitude
+            }
+        }
+
+        return (publicContribution, fixedLaneContribution, variableCoefficientSum)
+    }
+
+    private static func laneGeneratorUpperBound(width: LaneWidth, boundedBy safeUpperBound: UInt64) -> UInt64 {
+        switch width {
+        case .bit:
+            return 1
+        case .u8:
+            return min(safeUpperBound, 0xFF)
+        case .u16:
+            return min(safeUpperBound, 0xFFFF)
+        case .u32:
+            return min(safeUpperBound, UInt64(UInt32.max))
+        case .u64, .field, .bounded:
+            return safeUpperBound
+        }
+    }
+
+    private static func laneIndex(for column: Int, layout: ColumnLayout) -> Int? {
+        layout.laneRanges.firstIndex(where: { $0.contains(column) })
+    }
+
+    private static func maxDerivedWitnessMagnitude(
+        relation: CCSRelation,
+        layout: ColumnLayout,
+        publicInputs: [Fq],
+        sourceLanes: [LaneDescriptor],
+        sourceValueUpperBound: UInt64
+    ) -> UInt64 {
+        let operandMatrices = Array(relation.matrices.prefix(2))
+        return (0..<relation.m).reduce(0 as UInt64) { currentMax, row in
+            let rowMagnitude = operandMatrices.reduce(0 as UInt64) { rowPartial, operandMatrix in
+                let start = Int(operandMatrix.rowPtr[row])
+                let end = Int(operandMatrix.rowPtr[row + 1])
+                return rowPartial + (start..<end).reduce(0 as UInt64) { contribution, entryIndex in
+                    let column = Int(operandMatrix.colIdx[entryIndex])
+                    let coefficientMagnitude = operandMatrix.values[entryIndex].centeredMagnitude
+                    if column < publicInputs.count {
+                        return contribution + coefficientMagnitude * publicInputs[column].centeredMagnitude
+                    }
+                    guard let laneIndex = laneIndex(for: column, layout: layout) else {
+                        return contribution
+                    }
+                    let laneUpperBound = laneGeneratorUpperBound(
+                        width: sourceLanes[laneIndex].width,
+                        boundedBy: sourceValueUpperBound
+                    )
+                    return contribution + coefficientMagnitude * laneUpperBound
+                }
+            }
+            return max(currentMax, rowMagnitude)
+        }
+    }
+
+    private static func preflightWitnessRepresentability(
+        _ witness: Witness,
+        workloadName: String
+    ) throws -> UInt64 {
+        let packedWitness = WitnessPacking.packWitnessToRings(lanes: witness.lanes)
+        let maxMagnitude = Decomposition.maxCenteredMagnitude(in: packedWitness)
+        guard Decomposition.witnessFits(
+            packedWitness,
+            base: NuProfile.canonical.decompBase,
+            numLimbs: NuProfile.canonical.decompLimbs
+        ) else {
+            throw BenchmarkError.workloadGenerationFailed(
+                "\(workloadName): packed witness max magnitude \(maxMagnitude) exceeds PiDEC representability ceiling \(NuProfile.canonical.normBound)"
+            )
+        }
+        return maxMagnitude
     }
 
     private static func makeSealInputs(
@@ -1422,8 +1705,8 @@ enum NuMetalQBenchmarks {
 
     private static func publicInputs(for workload: SealWorkload) -> [Fq] {
         [
-            Fq(UInt64(workload.rowCount * 3 + 11)),
-            Fq(UInt64(workload.sourceLanes.count * 19 + workload.leftTermsPerRow + workload.rightTermsPerRow))
+            Fq(UInt64((workload.rowCount + workload.leftTermsPerRow + 5) % 17 + 3)),
+            Fq(UInt64((workload.sourceLanes.count + workload.rightTermsPerRow + 7) % 19 + 5))
         ]
     }
 
@@ -1444,7 +1727,8 @@ enum NuMetalQBenchmarks {
                     seed: seed,
                     laneIndex: laneIndex,
                     row: row,
-                    width: descriptor.width
+                    width: descriptor.width,
+                    boundedBy: fixture.witnessBudget.sourceValueUpperBound
                 )
             }
             sourceWitnessLanes.append(WitnessLane(descriptor: descriptor, values: values))
@@ -1478,25 +1762,27 @@ enum NuMetalQBenchmarks {
         seed: UInt64,
         laneIndex: Int,
         row: Int,
-        width: LaneWidth
+        width: LaneWidth,
+        boundedBy safeUpperBound: UInt64
     ) -> Fq {
         let mixed = seed
             &+ UInt64(laneIndex * 97)
             &+ UInt64(row * 131)
             &+ UInt64((laneIndex + 1) * (row + 3))
+        let laneUpperBound = max(1, laneGeneratorUpperBound(width: width, boundedBy: safeUpperBound) &+ 1)
         switch width {
         case .bit:
             return Fq(mixed & 1)
         case .u8:
-            return Fq(mixed % 127)
+            return Fq(mixed % laneUpperBound)
         case .u16:
-            return Fq(mixed % 127)
+            return Fq(mixed % laneUpperBound)
         case .u32:
-            return Fq(mixed % 127)
+            return Fq(mixed % laneUpperBound)
         case .u64, .field:
-            return Fq(mixed % 127)
+            return Fq(mixed % laneUpperBound)
         case .bounded:
-            return Fq(mixed % 127)
+            return Fq(mixed % laneUpperBound)
         }
     }
 
@@ -1880,6 +2166,7 @@ private struct SealWorkloadFixture {
     let derivedLane: LaneDescriptor
     let layout: ColumnLayout
     let publicInputs: [Fq]
+    let witnessBudget: SealWitnessBudget
 }
 
 private struct SealWorkloadScaffold {
@@ -1889,10 +2176,28 @@ private struct SealWorkloadScaffold {
     let derivedLane: LaneDescriptor
     let layout: ColumnLayout
     let publicInputs: [Fq]
+    let witnessBudget: SealWitnessBudget
 
     var allLanes: [LaneDescriptor] {
         sourceLanes + [derivedLane]
     }
+}
+
+private enum BenchmarkRepresentabilityStatus: String, Codable {
+    case pending
+    case verified
+    case failed
+}
+
+private struct SealWitnessBudget: Codable {
+    let normCeiling: UInt64
+    let guardBand: UInt64
+    let sourceValueUpperBound: UInt64
+    let derivedValueUpperBound: UInt64
+    let generatorHeadroom: UInt64
+    let publicContributionCeiling: UInt64
+    let fixedLaneContributionCeiling: UInt64
+    let variableCoefficientCeiling: UInt64
 }
 
 private struct ColumnLayout {
@@ -2076,8 +2381,13 @@ private struct SealBenchmarkResult: Codable {
     let assistedVerifyGPU: TimingSummary?
     let verifyMode: String
     let verificationParity: HachiVerificationParity
+    let normCeiling: UInt64
+    let generatorHeadroom: UInt64
+    let preflightMaxMagnitude: UInt64
+    let representabilityStatus: BenchmarkRepresentabilityStatus
     let dispatchTracePath: String?
     let parityNote: String?
+    let representabilityNote: String?
     let fuseFailure: String?
 }
 
@@ -2405,8 +2715,13 @@ private actor BenchmarkArtifactWriter {
                 assistedVerifyGPU: result.assistedVerifyGPU,
                 verifyMode: result.verifyMode,
                 verificationParity: result.verificationParity,
+                normCeiling: result.normCeiling,
+                generatorHeadroom: result.generatorHeadroom,
+                preflightMaxMagnitude: result.preflightMaxMagnitude,
+                representabilityStatus: result.representabilityStatus,
                 dispatchTracePath: result.dispatchTracePath,
                 parityNote: result.parityNote,
+                representabilityNote: result.representabilityNote,
                 fuseFailure: result.fuseFailure
             )
         }
@@ -2565,6 +2880,7 @@ private enum BenchmarkError: LocalizedError {
     case invalidArguments(String)
     case invalidVerification(String)
     case invalidWorkload(String)
+    case workloadGenerationFailed(String)
     case metalMismatch(String)
 
     var errorDescription: String? {
@@ -2575,6 +2891,8 @@ private enum BenchmarkError: LocalizedError {
             return "verification failed: \(message)"
         case .invalidWorkload(let message):
             return "invalid workload: \(message)"
+        case .workloadGenerationFailed(let message):
+            return "workload generation failed: \(message)"
         case .metalMismatch(let message):
             return "metal mismatch: \(message)"
         }

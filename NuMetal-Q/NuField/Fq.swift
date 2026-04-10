@@ -112,13 +112,13 @@ extension Fq {
     public var isZero: Bool { v == 0 }
 
     /// Absolute value of the centered lift in [0, q/2].
-    var centeredMagnitude: UInt64 {
+    package var centeredMagnitude: UInt64 {
         let half = Self.modulus / 2
         return v <= half ? v : Self.modulus &- v
     }
 
     /// Centered signed lift in [-(q-1)/2, (q-1)/2].
-    var centeredSignedValue: Int64 {
+    package var centeredSignedValue: Int64 {
         let magnitude = centeredMagnitude
         if v <= Self.modulus / 2 {
             return Int64(magnitude)
@@ -126,7 +126,7 @@ extension Fq {
         return -Int64(magnitude)
     }
 
-    static func fromCenteredMagnitude(_ magnitude: UInt64, isNegative: Bool) -> Fq {
+    package static func fromCenteredMagnitude(_ magnitude: UInt64, isNegative: Bool) -> Fq {
         precondition(magnitude < modulus, "centered magnitude must stay in the base field")
         guard magnitude != 0 else { return .zero }
         return isNegative ? Fq(raw: modulus &- magnitude) : Fq(raw: magnitude)

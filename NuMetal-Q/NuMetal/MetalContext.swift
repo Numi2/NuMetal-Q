@@ -60,6 +60,9 @@ public final class MetalContext: @unchecked Sendable {
     /// Whether this device supports dispatch-boundary counter sampling.
     public let dispatchCounterSamplingSupported: Bool
 
+    /// Whether the staged direct-packed fast path is enabled on this device.
+    public let supportsDirectPackedFastPath: Bool
+
     public init() throws {
         #if !arch(arm64)
         throw NuMetalError.unsupportedCPUArchitecture
@@ -87,6 +90,7 @@ public final class MetalContext: @unchecked Sendable {
             gpuArtifactDigestHex: self.gpuArtifactDigest.prefix(8).map { String(format: "%02x", $0) }.joined(),
             storageLayoutVersion: MetalStorageLayout.currentVersion
         )
+        self.supportsDirectPackedFastPath = device.supportsFamily(.apple9)
         self.binaryArchiveURL = try? Self.prepareBinaryArchiveURL(binaryArchiveKey: self.binaryArchiveKey)
         self.timestampCounterSet = device.counterSets?.first(where: {
             $0.name.localizedCaseInsensitiveContains("timestamp")
@@ -402,8 +406,13 @@ public enum KernelFamily: String, Sendable, Hashable, CaseIterable {
     case sparseRotationCommitBatch = "nu_sparse_rot_commit_batch"
     case ringMultiplyAG64 = "nu_ring_mul_ag64_d64"
     case ringBindFoldBatch = "nu_ring_bind_fold_batch"
-    case directPackedMaskPrepare = "nu_direct_packed_mask_prepare"
-    case directPackedResponseFinalize = "nu_direct_packed_response_finalize"
+    case directPackedMaskDecode = "nu_direct_packed_mask_decode"
+    case directPackedImagePrepare = "nu_direct_packed_image_prepare"
+    case directPackedEvaluationPartialReduce = "nu_direct_packed_evaluation_partial_reduce"
+    case directPackedEvaluationFinalize = "nu_direct_packed_evaluation_finalize"
+    case directPackedResponseForm = "nu_direct_packed_response_form"
+    case directPackedResponseMetricsPartialReduce = "nu_direct_packed_response_metrics_partial_reduce"
+    case directPackedResponseMetricsFinalize = "nu_direct_packed_response_metrics_finalize"
     case matrixLift = "nu_matrix_lift"
     case sumCheckPartial = "nu_sumcheck_partial"
     case piRLCFold = "nu_pirlc_fold"

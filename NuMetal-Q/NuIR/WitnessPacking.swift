@@ -6,31 +6,31 @@ import Foundation
 // For AG64, d = 64, so a length-(64 * n) field vector becomes a length-n ring
 // vector with only zero-padding on the final partial tuple.
 
-internal enum WitnessPacking {
+package enum WitnessPacking {
     enum Error: Swift.Error, Sendable {
         case unsupportedRepresentation(expectedCanonicalRings: Int, actualRings: Int)
     }
 
-    static func valuesPerRing(for descriptor: LaneDescriptor) -> Int {
+    package static func valuesPerRing(for descriptor: LaneDescriptor) -> Int {
         _ = descriptor
         return RingElement.degree
     }
 
-    static func slotCount(for lane: WitnessLane) -> Int {
+    package static func slotCount(for lane: WitnessLane) -> Int {
         guard lane.values.isEmpty == false else { return 0 }
         let capacity = valuesPerRing(for: lane.descriptor)
         return (lane.values.count + capacity - 1) / capacity
     }
 
-    static func packLaneToRings(_ lane: WitnessLane) -> [RingElement] {
+    package static func packLaneToRings(_ lane: WitnessLane) -> [RingElement] {
         packFieldVectorToRings(lane.values)
     }
 
-    static func packWitnessToRings(lanes: [WitnessLane]) -> [RingElement] {
+    package static func packWitnessToRings(lanes: [WitnessLane]) -> [RingElement] {
         lanes.flatMap(packLaneToRings)
     }
 
-    static func packFieldVectorToRings(_ values: [Fq]) -> [RingElement] {
+    package static func packFieldVectorToRings(_ values: [Fq]) -> [RingElement] {
         guard values.isEmpty == false else { return [] }
 
         let ringCount = (values.count + RingElement.degree - 1) / RingElement.degree
@@ -50,7 +50,7 @@ internal enum WitnessPacking {
         return rings
     }
 
-    static func unpackFieldVector(from rings: [RingElement], originalLength: Int? = nil) -> [Fq] {
+    package static func unpackFieldVector(from rings: [RingElement], originalLength: Int? = nil) -> [Fq] {
         let flattened = rings.flatMap(\.coeffs)
         guard let originalLength else {
             return flattened
@@ -58,12 +58,12 @@ internal enum WitnessPacking {
         return Array(flattened.prefix(originalLength))
     }
 
-    static func canonicalRingCount(forFieldCount count: Int) -> Int {
+    package static func canonicalRingCount(forFieldCount count: Int) -> Int {
         guard count > 0 else { return 0 }
         return (count + RingElement.degree - 1) / RingElement.degree
     }
 
-    static func canonicalizeRings(
+    package static func canonicalizeRings(
         _ rings: [RingElement],
         originalFieldCount: Int,
         decompBase: UInt8,

@@ -829,7 +829,7 @@ internal enum ShortLinearWitnessPoK {
         finalOuterCoefficients: [RingElement],
         context: MetalContext?
     ) throws -> DirectPackedFinalOpeningPreparation {
-        guard let context else {
+        guard let context, context.supportsDirectPackedFastPath else {
             return cpuFinalOpeningPreparation(
                 statement: statement,
                 shortSeedMaterial: shortSeedMaterial,
@@ -878,7 +878,7 @@ internal enum ShortLinearWitnessPoK {
         residualOuter: [RingElement],
         context: MetalContext?
     ) throws -> DirectPackedFinalOpeningResponses {
-        guard let context else {
+        guard let context, context.supportsDirectPackedFastPath else {
             return cpuFinalOpeningResponses(
                 sigmaChallenge: sigmaChallenge,
                 shortMasks: shortMasks,

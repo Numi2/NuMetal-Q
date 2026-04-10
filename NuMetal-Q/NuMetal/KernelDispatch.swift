@@ -649,57 +649,29 @@ public final class KernelDispatcher: @unchecked Sendable {
 
     // MARK: - Direct-Packed Final Opening
 
-    package func dispatchDirectPackedMaskPrepare(
-        parameterBuffer: MetalBufferSlice,
-        gaussianThresholdBuffer: MetalBufferSlice,
-        shortMagnitudeRawBuffer: MetalBufferSlice,
-        shortSignRawBuffer: MetalBufferSlice,
-        outerMagnitudeRawBuffer: MetalBufferSlice,
-        outerSignRawBuffer: MetalBufferSlice,
-        bindingCoefficientBuffer: MetalBufferSlice,
-        relationShortCoefficientBuffer: MetalBufferSlice,
-        relationOuterCoefficientBuffer: MetalBufferSlice,
-        evaluationWeightBuffer: MetalBufferSlice,
-        outerCoefficientBuffer: MetalBufferSlice,
-        shortMaskBuffer: MetalBufferSlice,
-        outerMaskBuffer: MetalBufferSlice,
-        bindingMaskVectorBuffer: MetalBufferSlice,
-        relationMaskVectorBuffer: MetalBufferSlice,
-        evaluationMaskBuffer: MetalBufferSlice,
-        outerMaskVectorBuffer: MetalBufferSlice,
-        totalCoefficientCount: Int
+    private func dispatchDirectPackedKernel(
+        family: KernelFamily,
+        buffers: [(slice: MetalBufferSlice, index: Int)],
+        totalThreads: Int,
+        requestedThreadgroupWidth: Int
     ) throws {
-        let pso = try context.pipeline(for: .directPackedMaskPrepare)
+        let pso = try context.pipeline(for: family)
         guard let cmdBuffer = context.commandQueue.makeCommandBuffer(),
               let encoder = cmdBuffer.makeComputeCommandEncoder() else {
             throw NuMetalError.encodingFailed
         }
 
         encoder.setComputePipelineState(pso)
-        encoder.setBuffer(parameterBuffer.buffer, offset: parameterBuffer.offset, index: 0)
-        encoder.setBuffer(gaussianThresholdBuffer.buffer, offset: gaussianThresholdBuffer.offset, index: 1)
-        encoder.setBuffer(shortMagnitudeRawBuffer.buffer, offset: shortMagnitudeRawBuffer.offset, index: 2)
-        encoder.setBuffer(shortSignRawBuffer.buffer, offset: shortSignRawBuffer.offset, index: 3)
-        encoder.setBuffer(outerMagnitudeRawBuffer.buffer, offset: outerMagnitudeRawBuffer.offset, index: 4)
-        encoder.setBuffer(outerSignRawBuffer.buffer, offset: outerSignRawBuffer.offset, index: 5)
-        encoder.setBuffer(bindingCoefficientBuffer.buffer, offset: bindingCoefficientBuffer.offset, index: 6)
-        encoder.setBuffer(relationShortCoefficientBuffer.buffer, offset: relationShortCoefficientBuffer.offset, index: 7)
-        encoder.setBuffer(relationOuterCoefficientBuffer.buffer, offset: relationOuterCoefficientBuffer.offset, index: 8)
-        encoder.setBuffer(evaluationWeightBuffer.buffer, offset: evaluationWeightBuffer.offset, index: 9)
-        encoder.setBuffer(outerCoefficientBuffer.buffer, offset: outerCoefficientBuffer.offset, index: 10)
-        encoder.setBuffer(shortMaskBuffer.buffer, offset: shortMaskBuffer.offset, index: 11)
-        encoder.setBuffer(outerMaskBuffer.buffer, offset: outerMaskBuffer.offset, index: 12)
-        encoder.setBuffer(bindingMaskVectorBuffer.buffer, offset: bindingMaskVectorBuffer.offset, index: 13)
-        encoder.setBuffer(relationMaskVectorBuffer.buffer, offset: relationMaskVectorBuffer.offset, index: 14)
-        encoder.setBuffer(evaluationMaskBuffer.buffer, offset: evaluationMaskBuffer.offset, index: 15)
-        encoder.setBuffer(outerMaskVectorBuffer.buffer, offset: outerMaskVectorBuffer.offset, index: 16)
+        for entry in buffers {
+            encoder.setBuffer(entry.slice.buffer, offset: entry.slice.offset, index: entry.index)
+        }
 
         let executionWidth = max(1, Int(pso.threadExecutionWidth))
         let threadgroupSize = canonicalThreadgroupSize(
-            requestedWidth: executionWidth,
+            requestedWidth: max(requestedThreadgroupWidth, executionWidth),
             pipeline: pso
         )
-        let gridSize = MTLSize(width: 1, height: 1, depth: 1)
+        let gridSize = MTLSize(width: max(1, totalThreads), height: 1, depth: 1)
         encoder.dispatchThreads(gridSize, threadsPerThreadgroup: threadgroupSize)
         encoder.endEncoding()
         cmdBuffer.commit()
@@ -710,7 +682,105 @@ public final class KernelDispatcher: @unchecked Sendable {
         }
     }
 
-    package func dispatchDirectPackedResponseFinalize(
+    package func dispatchDirectPackedMaskDecode(
+        parameterBuffer: MetalBufferSlice,
+        gaussianThresholdBuffer: MetalBufferSlice,
+        shortMagnitudeRawBuffer: MetalBufferSlice,
+        shortSignRawBuffer: MetalBufferSlice,
+        outerMagnitudeRawBuffer: MetalBufferSlice,
+        outerSignRawBuffer: MetalBufferSlice,
+        shortMaskBuffer: MetalBufferSlice,
+        outerMaskBuffer: MetalBufferSlice,
+        totalCoefficientCount: Int
+    ) throws {
+        try dispatchDirectPackedKernel(
+            family: .directPackedMaskDecode,
+            buffers: [
+                (parameterBuffer, 0),
+                (gaussianThresholdBuffer, 1),
+                (shortMagnitudeRawBuffer, 2),
+                (shortSignRawBuffer, 3),
+                (outerMagnitudeRawBuffer, 4),
+                (outerSignRawBuffer, 5),
+                (shortMaskBuffer, 6),
+                (outerMaskBuffer, 7),
+            ],
+            totalThreads: totalCoefficientCount,
+            requestedThreadgroupWidth: 128
+        )
+    }
+
+    package func dispatchDirectPackedImagePrepare(
+        parameterBuffer: MetalBufferSlice,
+        bindingCoefficientBuffer: MetalBufferSlice,
+        relationShortCoefficientBuffer: MetalBufferSlice,
+        relationOuterCoefficientBuffer: MetalBufferSlice,
+        outerCoefficientBuffer: MetalBufferSlice,
+        shortMaskBuffer: MetalBufferSlice,
+        outerMaskBuffer: MetalBufferSlice,
+        bindingMaskVectorBuffer: MetalBufferSlice,
+        relationMaskVectorBuffer: MetalBufferSlice,
+        outerMaskVectorBuffer: MetalBufferSlice,
+        totalCoefficientCount: Int
+    ) throws {
+        try dispatchDirectPackedKernel(
+            family: .directPackedImagePrepare,
+            buffers: [
+                (parameterBuffer, 0),
+                (bindingCoefficientBuffer, 1),
+                (relationShortCoefficientBuffer, 2),
+                (relationOuterCoefficientBuffer, 3),
+                (outerCoefficientBuffer, 4),
+                (shortMaskBuffer, 5),
+                (outerMaskBuffer, 6),
+                (bindingMaskVectorBuffer, 7),
+                (relationMaskVectorBuffer, 8),
+                (outerMaskVectorBuffer, 9),
+            ],
+            totalThreads: totalCoefficientCount,
+            requestedThreadgroupWidth: RingElement.degree
+        )
+    }
+
+    package func dispatchDirectPackedEvaluationPartialReduce(
+        parameterBuffer: MetalBufferSlice,
+        shortMaskBuffer: MetalBufferSlice,
+        evaluationWeightBuffer: MetalBufferSlice,
+        evaluationPartialBuffer: MetalBufferSlice,
+        chunkCount: Int
+    ) throws {
+        try dispatchDirectPackedKernel(
+            family: .directPackedEvaluationPartialReduce,
+            buffers: [
+                (parameterBuffer, 0),
+                (shortMaskBuffer, 1),
+                (evaluationWeightBuffer, 2),
+                (evaluationPartialBuffer, 3),
+            ],
+            totalThreads: chunkCount * RingElement.degree,
+            requestedThreadgroupWidth: RingElement.degree
+        )
+    }
+
+    package func dispatchDirectPackedEvaluationFinalize(
+        parameterBuffer: MetalBufferSlice,
+        evaluationPartialBuffer: MetalBufferSlice,
+        evaluationMaskBuffer: MetalBufferSlice,
+        chunkCount: Int
+    ) throws {
+        try dispatchDirectPackedKernel(
+            family: .directPackedEvaluationFinalize,
+            buffers: [
+                (parameterBuffer, 0),
+                (evaluationPartialBuffer, 1),
+                (evaluationMaskBuffer, 2),
+            ],
+            totalThreads: RingElement.degree,
+            requestedThreadgroupWidth: RingElement.degree
+        )
+    }
+
+    package func dispatchDirectPackedResponseForm(
         parameterBuffer: MetalBufferSlice,
         shortMaskBuffer: MetalBufferSlice,
         outerMaskBuffer: MetalBufferSlice,
@@ -718,39 +788,64 @@ public final class KernelDispatcher: @unchecked Sendable {
         residualOuterBuffer: MetalBufferSlice,
         shortResponseBuffer: MetalBufferSlice,
         outerResponseBuffer: MetalBufferSlice,
-        metricsBuffer: MetalBufferSlice,
         totalCoefficientCount: Int
     ) throws {
-        let pso = try context.pipeline(for: .directPackedResponseFinalize)
-        guard let cmdBuffer = context.commandQueue.makeCommandBuffer(),
-              let encoder = cmdBuffer.makeComputeCommandEncoder() else {
-            throw NuMetalError.encodingFailed
-        }
-
-        encoder.setComputePipelineState(pso)
-        encoder.setBuffer(parameterBuffer.buffer, offset: parameterBuffer.offset, index: 0)
-        encoder.setBuffer(shortMaskBuffer.buffer, offset: shortMaskBuffer.offset, index: 1)
-        encoder.setBuffer(outerMaskBuffer.buffer, offset: outerMaskBuffer.offset, index: 2)
-        encoder.setBuffer(residualShortBuffer.buffer, offset: residualShortBuffer.offset, index: 3)
-        encoder.setBuffer(residualOuterBuffer.buffer, offset: residualOuterBuffer.offset, index: 4)
-        encoder.setBuffer(shortResponseBuffer.buffer, offset: shortResponseBuffer.offset, index: 5)
-        encoder.setBuffer(outerResponseBuffer.buffer, offset: outerResponseBuffer.offset, index: 6)
-        encoder.setBuffer(metricsBuffer.buffer, offset: metricsBuffer.offset, index: 7)
-
-        let executionWidth = max(1, Int(pso.threadExecutionWidth))
-        let threadgroupSize = canonicalThreadgroupSize(
-            requestedWidth: executionWidth,
-            pipeline: pso
+        try dispatchDirectPackedKernel(
+            family: .directPackedResponseForm,
+            buffers: [
+                (parameterBuffer, 0),
+                (shortMaskBuffer, 1),
+                (outerMaskBuffer, 2),
+                (residualShortBuffer, 3),
+                (residualOuterBuffer, 4),
+                (shortResponseBuffer, 5),
+                (outerResponseBuffer, 6),
+            ],
+            totalThreads: totalCoefficientCount,
+            requestedThreadgroupWidth: 128
         )
-        let gridSize = MTLSize(width: 1, height: 1, depth: 1)
-        encoder.dispatchThreads(gridSize, threadsPerThreadgroup: threadgroupSize)
-        encoder.endEncoding()
-        cmdBuffer.commit()
-        cmdBuffer.waitUntilCompleted()
+    }
 
-        if cmdBuffer.status == .error {
-            throw NuMetalError.executionFailed
-        }
+    package func dispatchDirectPackedResponseMetricsPartialReduce(
+        parameterBuffer: MetalBufferSlice,
+        shortMaskBuffer: MetalBufferSlice,
+        outerMaskBuffer: MetalBufferSlice,
+        shortResponseBuffer: MetalBufferSlice,
+        outerResponseBuffer: MetalBufferSlice,
+        metricsPartialBuffer: MetalBufferSlice,
+        totalCoefficientCount: Int
+    ) throws {
+        try dispatchDirectPackedKernel(
+            family: .directPackedResponseMetricsPartialReduce,
+            buffers: [
+                (parameterBuffer, 0),
+                (shortMaskBuffer, 1),
+                (outerMaskBuffer, 2),
+                (shortResponseBuffer, 3),
+                (outerResponseBuffer, 4),
+                (metricsPartialBuffer, 5),
+            ],
+            totalThreads: max(1, ((totalCoefficientCount + 127) / 128) * 128),
+            requestedThreadgroupWidth: 128
+        )
+    }
+
+    package func dispatchDirectPackedResponseMetricsFinalize(
+        parameterBuffer: MetalBufferSlice,
+        metricsPartialBuffer: MetalBufferSlice,
+        metricsBuffer: MetalBufferSlice,
+        partialCount: Int
+    ) throws {
+        try dispatchDirectPackedKernel(
+            family: .directPackedResponseMetricsFinalize,
+            buffers: [
+                (parameterBuffer, 0),
+                (metricsPartialBuffer, 1),
+                (metricsBuffer, 2),
+            ],
+            totalThreads: 64,
+            requestedThreadgroupWidth: 64
+        )
     }
 
     // MARK: - Sum-Check Partial Reduction

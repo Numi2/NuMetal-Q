@@ -76,11 +76,13 @@
   - residual block count per chunk
   - accumulator and rejection transcript domains
   - security profile digest
-- Direct-packed final-opening execution now uses dedicated protocol Metal kernels for:
-  - Gaussian mask materialization from transcript-derived seed buffers
-  - mask-image vector preparation
+- Direct-packed final-opening execution now uses a staged Apple-silicon Metal pipeline for:
+  - Gaussian mask decode from transcript-derived seed buffers
+  - per-chunk image-vector preparation
+  - evaluation partial reduction and finalize
   - response formation
-  - rejection-metric preparation and bound checks
+  - rejection-metric partial reduction and finalize
+- The Apple9+ direct-packed fast path is feature-gated; older supported families fall back to the CPU oracle for final-opening execution.
 - `SealProof.currentVersion` is now `9`.
 - `PublicSealProof.currentVersion` is now `5`.
 - Verifier-stage benchmarking now reports CPU vs Metal-assisted timings for:
@@ -88,6 +90,11 @@
   - PiRLC verify
   - PiDEC verify
   - explicit counter-capture state and GPU timing source
+- Seal-workload benchmarking now preflights packed-witness PiDEC representability before seal work starts and reports:
+  - norm ceiling
+  - generator headroom
+  - preflight max centered magnitude
+  - representability status
 
 ## Current Verification State
 - Semantic Hachi verification is the implementation path for end-to-end seal verification.

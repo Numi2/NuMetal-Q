@@ -49,6 +49,8 @@ internal enum DirectPackedFinalOpeningMetal {
         var responseBoundExceeded: UInt32
     }
 
+    private static let metricsThreadgroupWidth = 128
+
     static func prepare(
         statement: ShortLinearWitnessStatement,
         shortSeedMaterial: DirectPackedMaskSeedMaterial,
@@ -88,6 +90,7 @@ internal enum DirectPackedFinalOpeningMetal {
                   let outerMaskSlice = arena.makeSharedSlice(length: ringBufferLength(ringCount: chunkCount)),
                   let bindingMaskVectorSlice = arena.makeSharedSlice(length: ringBufferLength(ringCount: chunkCount)),
                   let relationMaskVectorSlice = arena.makeSharedSlice(length: ringBufferLength(ringCount: chunkCount)),
+                  let evaluationPartialSlice = arena.makeSharedSlice(length: ag64BufferLength(count: chunkCount)),
                   let evaluationMaskSlice = arena.makeSharedSlice(length: ringBufferLength(ringCount: 1)),
                   let outerMaskVectorSlice = arena.makeSharedSlice(length: ringBufferLength(ringCount: chunkCount)) else {
                 throw NuMetalError.heapCreationFailed
@@ -96,25 +99,42 @@ internal enum DirectPackedFinalOpeningMetal {
             parameterSlice.typedContents(as: MaskPrepareParams.self, capacity: 1)[0] = params
 
             let dispatcher = KernelDispatcher(context: context)
-            try dispatcher.dispatchDirectPackedMaskPrepare(
+            try dispatcher.dispatchDirectPackedMaskDecode(
                 parameterBuffer: parameterSlice,
                 gaussianThresholdBuffer: gaussianThresholdSlice,
                 shortMagnitudeRawBuffer: shortMagnitudeSlice,
                 shortSignRawBuffer: shortSignSlice,
                 outerMagnitudeRawBuffer: outerMagnitudeSlice,
                 outerSignRawBuffer: outerSignSlice,
+                shortMaskBuffer: shortMaskSlice,
+                outerMaskBuffer: outerMaskSlice,
+                totalCoefficientCount: totalCoefficientCount
+            )
+            try dispatcher.dispatchDirectPackedImagePrepare(
+                parameterBuffer: parameterSlice,
                 bindingCoefficientBuffer: bindingCoefficientSlice,
                 relationShortCoefficientBuffer: relationShortSlice,
                 relationOuterCoefficientBuffer: relationOuterSlice,
-                evaluationWeightBuffer: evaluationWeightSlice,
                 outerCoefficientBuffer: outerCoefficientSlice,
                 shortMaskBuffer: shortMaskSlice,
                 outerMaskBuffer: outerMaskSlice,
                 bindingMaskVectorBuffer: bindingMaskVectorSlice,
                 relationMaskVectorBuffer: relationMaskVectorSlice,
-                evaluationMaskBuffer: evaluationMaskSlice,
                 outerMaskVectorBuffer: outerMaskVectorSlice,
                 totalCoefficientCount: totalCoefficientCount
+            )
+            try dispatcher.dispatchDirectPackedEvaluationPartialReduce(
+                parameterBuffer: parameterSlice,
+                shortMaskBuffer: shortMaskSlice,
+                evaluationWeightBuffer: evaluationWeightSlice,
+                evaluationPartialBuffer: evaluationPartialSlice,
+                chunkCount: chunkCount
+            )
+            try dispatcher.dispatchDirectPackedEvaluationFinalize(
+                parameterBuffer: parameterSlice,
+                evaluationPartialBuffer: evaluationPartialSlice,
+                evaluationMaskBuffer: evaluationMaskSlice,
+                chunkCount: chunkCount
             )
 
             return DirectPackedFinalOpeningPreparation(
@@ -155,6 +175,9 @@ internal enum DirectPackedFinalOpeningMetal {
                   let residualOuterSlice = arena.uploadRingElementsSoA(residualOuter, paddedTo: chunkCount),
                   let shortResponseSlice = arena.makeSharedSlice(length: ringBufferLength(ringCount: chunkCount)),
                   let outerResponseSlice = arena.makeSharedSlice(length: ringBufferLength(ringCount: chunkCount)),
+                  let metricsPartialSlice = arena.makeSharedSlice(
+                    length: metricsPartialBufferLength(totalCoefficientCount: totalCoefficientCount)
+                  ),
                   let metricsSlice = arena.makeSharedSlice(length: MemoryLayout<ResponseMetricsABI>.size) else {
                 throw NuMetalError.heapCreationFailed
             }
@@ -168,7 +191,7 @@ internal enum DirectPackedFinalOpeningMetal {
             )
 
             let dispatcher = KernelDispatcher(context: context)
-            try dispatcher.dispatchDirectPackedResponseFinalize(
+            try dispatcher.dispatchDirectPackedResponseForm(
                 parameterBuffer: parameterSlice,
                 shortMaskBuffer: shortMaskSlice,
                 outerMaskBuffer: outerMaskSlice,
@@ -176,8 +199,23 @@ internal enum DirectPackedFinalOpeningMetal {
                 residualOuterBuffer: residualOuterSlice,
                 shortResponseBuffer: shortResponseSlice,
                 outerResponseBuffer: outerResponseSlice,
-                metricsBuffer: metricsSlice,
                 totalCoefficientCount: totalCoefficientCount
+            )
+            zeroFill(metricsPartialSlice)
+            try dispatcher.dispatchDirectPackedResponseMetricsPartialReduce(
+                parameterBuffer: parameterSlice,
+                shortMaskBuffer: shortMaskSlice,
+                outerMaskBuffer: outerMaskSlice,
+                shortResponseBuffer: shortResponseSlice,
+                outerResponseBuffer: outerResponseSlice,
+                metricsPartialBuffer: metricsPartialSlice,
+                totalCoefficientCount: totalCoefficientCount
+            )
+            try dispatcher.dispatchDirectPackedResponseMetricsFinalize(
+                parameterBuffer: parameterSlice,
+                metricsPartialBuffer: metricsPartialSlice,
+                metricsBuffer: metricsSlice,
+                partialCount: metricsPartialCount(totalCoefficientCount: totalCoefficientCount)
             )
 
             let metrics = metricsSlice.typedContents(as: ResponseMetricsABI.self, capacity: 1).pointee
@@ -210,6 +248,23 @@ internal enum DirectPackedFinalOpeningMetal {
 
     private static func ringBufferLength(ringCount: Int) -> Int {
         max(1, ringCount) * RingElement.degree * MemoryLayout<UInt32>.size * 2
+    }
+
+    private static func ag64BufferLength(count: Int) -> Int {
+        max(1, count) * MemoryLayout<UInt32>.size * 2
+    }
+
+    private static func metricsPartialCount(totalCoefficientCount: Int) -> Int {
+        max(1, (max(1, totalCoefficientCount) + metricsThreadgroupWidth - 1) / metricsThreadgroupWidth)
+    }
+
+    private static func metricsPartialBufferLength(totalCoefficientCount: Int) -> Int {
+        metricsPartialCount(totalCoefficientCount: totalCoefficientCount) * MemoryLayout<ResponseMetricsABI>.size
+    }
+
+    private static func zeroFill(_ slice: MetalBufferSlice) {
+        let pointer = slice.buffer.contents().advanced(by: slice.offset)
+        pointer.initializeMemory(as: UInt8.self, repeating: 0, count: slice.length)
     }
 
     private static func decodeRingBuffer(

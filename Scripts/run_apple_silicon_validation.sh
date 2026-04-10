@@ -20,12 +20,22 @@ rm -rf "$BENCH_SMOKE_DIR" "$BENCH_PARITY_DIR"
 echo "Running Apple-silicon validation with outputs under:"
 echo "  $OUT_DIR"
 
-Scripts/check_repo_metadata.sh
-swift test
-Scripts/build_metal_artifacts.sh
-swift run NuMetalQAcceptanceDemo --format json --output "$ACCEPTANCE_JSON"
-swift run NuMetalQBenchmarks --iterations 1 --warmups 0 --output "$BENCH_SMOKE_DIR"
-swift run NuMetalQBenchmarks \
+run_stage() {
+  local stage="$1"
+  shift
+  echo "[validation] ${stage}"
+  if ! "$@"; then
+    echo "[validation] stage failed: ${stage}" >&2
+    exit 1
+  fi
+}
+
+run_stage "repo-metadata" Scripts/check_repo_metadata.sh
+run_stage "swift-test" swift test
+run_stage "build-metal-artifacts" Scripts/build_metal_artifacts.sh
+run_stage "acceptance-demo" swift run NuMetalQAcceptanceDemo --format json --output "$ACCEPTANCE_JSON"
+run_stage "bench-stress-all" swift run NuMetalQBenchmarks --iterations 1 --warmups 0 --output "$BENCH_SMOKE_DIR"
+run_stage "bench-stress-auth-policy-sparse" swift run NuMetalQBenchmarks \
   --iterations 1 \
   --warmups 0 \
   --seal-workload auth-policy-sparse \
