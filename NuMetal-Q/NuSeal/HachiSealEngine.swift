@@ -790,7 +790,7 @@ private extension HachiSealEngine {
         claimedSum: Fq,
         transcript: inout NuTranscriptSeal,
         label: String,
-        evaluator: @escaping ([Fq]) throws -> Fq
+        evaluator: ([Fq]) throws -> Fq
     ) throws -> (proof: SpartanSumcheckProof, finalPoint: [Fq], finalValue: Fq) {
         var challenges = [Fq]()
         challenges.reserveCapacity(variableCount)
@@ -799,13 +799,15 @@ private extension HachiSealEngine {
         rounds.reserveCapacity(variableCount)
 
         for round in 0..<variableCount {
-            let roundValues = try (0...degreeBound).map { pointValue in
-                try sumOverSuffixes(
+            var roundValues = [Fq]()
+            roundValues.reserveCapacity(degreeBound + 1)
+            for pointValue in 0...degreeBound {
+                roundValues.append(try sumOverSuffixes(
                     prefix: challenges,
                     currentValue: Fq(UInt64(pointValue)),
                     suffixCount: variableCount - round - 1,
                     evaluator: evaluator
-                )
+                ))
             }
             rounds.append(roundValues)
             transcript.absorb(label: "\(label).round.\(round)", scalars: roundValues)
@@ -862,7 +864,7 @@ private extension HachiSealEngine {
         prefix: [Fq],
         currentValue: Fq,
         suffixCount: Int,
-        evaluator: @escaping ([Fq]) throws -> Fq
+        evaluator: ([Fq]) throws -> Fq
     ) throws -> Fq {
         if suffixCount == 0 {
             return try evaluator(prefix + [currentValue])
