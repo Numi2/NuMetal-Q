@@ -127,9 +127,3 @@
   - query point derived schedules
 - Seal proof codec rejection on version mismatch
 - Rotation-matrix equivalence to negacyclic multiplication
-
-## Remaining Gaps
-- Verifier-stage benchmarks now emit per-dispatch GPU trace artifacts and rolled-up dispatch summaries, but dispatch-boundary counter capture remains unavailable on this host and currently falls back to GPU timeline reporting.
-- The direct-packed prover/verifier now uses the hiding accumulator carrier and transcript-bound rejection acceptance, but Gaussian sampling and rejection still run through host orchestration over existing AG64/Ajtai Metal primitives rather than dedicated protocol-specific kernels.
-- End-to-end seal verification uses a semantic Hachi verifier in both CPU-only and Metal-assisted modes, and benchmark reports surface explicit CPU/Metal verification parity. Metal-assisted verification remains the canonical default path on supported Apple silicon; CPU-only remains the reference oracle for parity and tests.
-- CI currently exercises a CPU-safe lane plus CLI smoke checks; the full proving/Metal path still depends on local Apple-silicon validation.
