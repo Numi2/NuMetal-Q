@@ -422,10 +422,20 @@ public actor ClusterSession {
         guard let attestationVerifier else {
             throw ClusterError.attestationVerifierMissing
         }
+        let stableAuthorDeviceID: UUID?
+        let stableTargetDeviceID: UUID?
+        switch (role, purpose) {
+        case (.coProver, .clusterDelegation):
+            stableAuthorDeviceID = peerDeviceID
+            stableTargetDeviceID = localDeviceID
+        default:
+            stableAuthorDeviceID = localDeviceID
+            stableTargetDeviceID = peerDeviceID
+        }
         let context = AttestationContext(
             purpose: purpose,
-            localDeviceID: localDeviceID,
-            remoteDeviceID: peerDeviceID,
+            localDeviceID: stableAuthorDeviceID,
+            remoteDeviceID: stableTargetDeviceID,
             sessionID: fragment.sessionID,
             shapeDigest: fragment.shapeDigest,
             timestamp: fragment.timestamp,

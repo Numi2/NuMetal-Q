@@ -11,5 +11,6 @@ For the implementation status log and recent benchmark-oriented changes, see:
 
 - [`METAL_FIRST_VNEXT.md`](../METAL_FIRST_VNEXT.md)
 - [`README.md`](../README.md)
+- [`testing.md`](./testing.md)
 
 This file gives benchmark review bundles a stable state-of-the-art reference inside the repo.

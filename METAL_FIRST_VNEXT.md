@@ -5,6 +5,8 @@
 - `Shape.digest` stays stable.
 - The GPU artifact ABI is versioned independently.
 - The seal proof format is bumped for the direct-packed PCS cutover.
+- This note tracks the current implementation surface and recommended validation commands.
+  It is not a certification artifact.
 
 ## Implemented Changes
 - `ShapePack` now carries `version`, `gpuLiftedMatrices`, and a signed `gpuArtifactDigest`.
@@ -75,7 +77,7 @@
   - accumulator and rejection transcript domains
   - security profile digest
 - `SealProof.currentVersion` is now `8`.
-- `PublicSealProof.currentVersion` is now `3`.
+- `PublicSealProof.currentVersion` is now `4`.
 - Hachi PCS now stages codeword extension and leaf hashing in one command buffer before waiting.
 - PCS benchmarking now reports live CPU/Metal timings plus:
   - threadgroup widths
@@ -93,14 +95,19 @@
   - allowing buffer allocation fallback outside heaps when heap allocation fails
   - short-circuiting empty sparse matrices in the Metal matrix path
 
-## Validation
+## Validation Commands
+- `Scripts/check_repo_metadata.sh`
 - `swift build`
-- `swift test --filter HachiPCSVerifierBoundaryTests`
-- `swift test --filter CryptoHardeningTests/testDirectPackedOpeningMetalMatchesCPU`
-- `swift test --filter CryptoHardeningTests/testDirectPackedOpeningSupportsTwoAndFourChunks`
-- `swift test --filter CryptoHardeningTests/testHachiVerifierRejectsCriticalMutations`
-- `swift test --filter CryptoHardeningTests/testHachiPCSCPUAndMetalArtifactsMatch`
+- `swift test --filter TranscriptVectorTests`
+- `swift test --filter WitnessPackingTests`
+- `swift test --filter SupportCodecTests`
+- `swift test --filter SyncProtocolTests`
+- `swift test --filter CryptoHardeningTests`
+- `swift test --filter ClusterWorkPacketTests`
 - `Scripts/build_metal_artifacts.sh`
+- `swift run NuMetalQAcceptanceDemo --help`
+- `swift run NuMetalQBenchmarks --help`
+- `swift run NuMetalQBenchmarks --list-workloads`
 - `swift run NuMetalQBenchmarks --iterations 1 --warmups 0 --output /tmp/numeq-bench-smoke`
 
 ## New or Expanded Coverage
@@ -133,3 +140,4 @@
 - Timed PCS kernels and verifier-stage benchmarks now emit per-dispatch GPU trace artifacts and rolled-up dispatch summaries, but dispatch-boundary counter capture remains unavailable on this host and currently falls back to GPU timeline reporting.
 - The direct-packed prover/verifier now uses the hiding accumulator carrier and transcript-bound rejection acceptance, but Gaussian sampling and rejection still run through host orchestration over existing AG64/Ajtai Metal primitives rather than dedicated protocol-specific kernels.
 - End-to-end seal verification uses a semantic Hachi verifier in both CPU-only and Metal-assisted modes, and benchmark reports surface explicit CPU/Metal verification parity. Metal-assisted verification remains the canonical default path on supported Apple silicon; CPU-only remains the reference oracle for parity and tests.
+- CI currently exercises a CPU-safe lane plus CLI smoke checks; the full proving/Metal path still depends on local Apple-silicon validation.

@@ -24,6 +24,16 @@ let package = Package(
             path: "NuMetal-Q",
             exclude: [
                 "NuMetal_Q.docc",
+                "NuCluster/README.md",
+                "NuField/README.md",
+                "NuFold/README.md",
+                "NuIR/README.md",
+                "NuMetal/README.md",
+                "NuSDK/README.md",
+                "NuSeal/README.md",
+                "NuSupport/README.md",
+                "NuVault/README.md",
+                "numeqc/README.md",
             ],
             resources: [
                 .copy("NuMetal/Compiled"),

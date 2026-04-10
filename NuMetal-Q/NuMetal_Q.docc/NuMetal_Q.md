@@ -8,10 +8,16 @@ NuMeQ is an Apple-only PCD engine built on SuperNeo CCS folding with the
 Almost Goldilocks field profile (q = 2^64 − 2^32 − 31, d = 64, ~129-bit Module-SIS security).
 The frozen production line is `HACHI-AG64-K4-DNU`: SuperNeo over `Fq/Fq2`
 for recursive accumulation, Hachi as the compiled terminal decider `D_Nu`
-over the certified quartic tower `Fq4`, and application-layer signing plus
+over an `Fq4` decider field, and application-layer signing plus
 transport around the exported envelope.
 
-The terminal PCS is mode-split by packed oracle size:
+The quartic decider field is mathematically natural here because `X^64 + 1`
+splits over `Fq` into irreducible quartics, so `Fq4` is the smallest extension
+where the negacyclic ring polynomial splits completely.
+
+The terminal opening backend is mode-split by packed oracle size. In code this
+backend is named `HachiPCSBackend`, but the general path is not presented as a
+standalone low-degree PCS theorem:
 
 - masked multilinear oracles with `packedChunkCount ∈ {1,2,4}` use the
   direct-packed relation-opening path,
@@ -35,6 +41,8 @@ cluster eligibility stays fail-closed across verify-then-rebind resume.
 
 ### Getting Started
 
+- <doc:GettingStarted>
+- <doc:DeveloperWorkflow>
 - ``NuMeQ``
 - ``ProofContext``
 - ``ProofHandle``

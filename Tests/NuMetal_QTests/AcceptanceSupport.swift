@@ -130,8 +130,17 @@ enum AcceptanceSupport {
         SymmetricKey(data: Data(repeating: 0xA5, count: 32))
     }
 
-    static func makeEngine() async throws -> NuMeQ {
-        try await NuMeQ()
+    static func makeEngine(file: StaticString = #filePath, line: UInt = #line) async throws -> NuMeQ {
+        do {
+            return try await NuMeQ()
+        } catch let error as NuMetalError {
+            switch error {
+            case .noGPU, .unsupportedCPUArchitecture, .unsupportedGPUFamily:
+                throw XCTSkip("NuMeQ engine unavailable on this host: \(error)", file: file, line: line)
+            default:
+                throw error
+            }
+        }
     }
 
     static func makeContext(engine: NuMeQ, name: String = "AcceptanceShape") async throws -> ProofContext {

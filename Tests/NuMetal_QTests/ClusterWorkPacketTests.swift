@@ -369,6 +369,70 @@ final class ClusterWorkPacketTests: XCTestCase {
         }
     }
 
+    func testClusterProcessFragmentAcceptsStrictStableDeviceAttestation() async throws {
+        let principal = try ClusterSession(
+            role: .principal,
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: nonEmptyAttestationVerifier
+        )
+        let coProver = try ClusterSession(
+            role: .coProver,
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: AcceptanceSupport.attestationVerifier
+        )
+        try await coProver.installWorkExecutor(ClusterWorkExecutor.standard())
+
+        let principalID = await principal.deviceID
+        let coProverID = await coProver.deviceID
+        try await principal.pair(peerDeviceID: coProverID, sharedSecret: AcceptanceSupport.sharedSecret)
+        try await coProver.pair(peerDeviceID: principalID, sharedSecret: AcceptanceSupport.sharedSecret)
+
+        let packet = ClusterDecomposeWorkPacket(
+            witness: [RingElement.zero],
+            commitment: AjtaiCommitment(value: .zero),
+            keySeed: Array(0..<32),
+            keySlotCount: 8,
+            decompBase: 2,
+            decompLimbs: 13
+        )
+        let fragment = try await principal.createDecomposeFragment(
+            shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 0xC3, count: 32)),
+            workPackage: packet.serialize(),
+            attestation: Data("placeholder".utf8)
+        )
+        let strictAttestation = try AcceptanceSupport.makeAttestation(
+            context: AttestationContext(
+                purpose: .clusterDelegation,
+                localDeviceID: principalID,
+                remoteDeviceID: coProverID,
+                sessionID: fragment.sessionID,
+                shapeDigest: fragment.shapeDigest,
+                timestamp: fragment.timestamp,
+                payloadDigest: NuSecurityDigest.sha256(fragment.attestationBindingPayload())
+            )
+        )
+        var strictFragment = JobFragment(
+            fragmentID: fragment.fragmentID,
+            sessionID: fragment.sessionID,
+            kind: fragment.kind,
+            shapeDigest: fragment.shapeDigest,
+            encryptedPayload: fragment.encryptedPayload,
+            laneClasses: fragment.laneClasses,
+            confinedIndices: fragment.confinedIndices,
+            attestation: strictAttestation,
+            signature: nil,
+            timestamp: fragment.timestamp
+        )
+        strictFragment.signature = try AcceptanceSupport.signer(strictFragment.signingPayload())
+
+        let result = try await coProver.processFragment(strictFragment)
+        let returned = try await principal.receiveResult(result)
+        let decoded = try ClusterDecomposeWorkResult.deserialize(returned)
+        XCTAssertTrue(decoded.isValid(for: packet))
+    }
+
     private func makePairedClusterSessions() async throws -> (principal: ClusterSession, coProver: ClusterSession) {
         let principal = try ClusterSession(
             role: .principal,

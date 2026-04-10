@@ -19,7 +19,7 @@ NuMeQ's current production profile is the canonical profile selected by `NuProfi
 - Commitment rank: `16`
 - Recursive-fold decomposition base: `b_dec = 2`
 - Recursive-fold decomposition limbs: `L_dec = 13`
-- Recursive-fold certified norm ceiling:
+- Recursive-fold PiDEC representability ceiling:
 
   `B_max = b_dec^L_dec = 2^13 = 8192`
 
@@ -42,8 +42,10 @@ The algebraic tower is:
 
 - `Fq`
 - `Fq2 = Fq[u] / (u^2 - 3)`
-- `Fq4 = Fq2[v] / (v^2 - u)`
+- `Fq4 = Fq2[v] / (v^2 - eta)` for a certified nonsquare `eta in Fq2`
 - `Rq = Fq[X] / (X^64 + 1)`
+
+For exposition below, it is convenient to take `eta = u`, which is a valid certified choice. The implementation stores a deterministic certified `eta` in `NuProfile.quarticEta`; the field formulas below hold for any nonsquare `eta in Fq2`.
 
 The seal layer also has a separate direct-packed relation proof with its own decomposition parameters:
 
@@ -134,18 +136,30 @@ The implementation uses Karatsuba:
 Conjugate, norm, inverse:
 
 - `conj(a + b*u) = a - b*u`
-- `N(a + b*u) = a^2 - beta*b^2`
-- `(a + b*u)^(-1) = conj(a + b*u) / N(a + b*u)`
+- `N_{Fq2/Fq}(a + b*u) = a^2 - beta*b^2`
+- `(a + b*u)^(-1) = conj(a + b*u) / N_{Fq2/Fq}(a + b*u)`
+
+These are relative norms from `Fq2` down to `Fq`.
 
 ### 3.2 Quartic tower Fq4
 
-The quartic tower is
+The quartic tower is any extension
 
 `Fq4 = Fq2[v] / (v^2 - eta)`
 
-with deterministic certified choice
+with `eta` a certified nonsquare in `Fq2`.
+
+For clean hand calculations, one may take
 
 `eta = u = (0, 1) in Fq2`.
+
+This choice is valid because
+
+`N_{Fq2/Fq}(u) = u * (-u) = -u^2 = -3`,
+
+and in `Fq` the element `-1` is a square while `3` is a nonsquare, so `-3` is also a nonsquare. In a quadratic extension, an element is a square if and only if its relative norm is a square in the base field, hence `u` is a nonsquare in `Fq2`.
+
+The implementation pins a deterministic certified `eta` in the profile certificate. The formulas below are valid for any such nonsquare `eta`.
 
 Write elements as
 
@@ -167,8 +181,20 @@ The implementation again uses Karatsuba:
 Conjugate, norm, inverse:
 
 - `conj(A + B*v) = A - B*v`
-- `N(A + B*v) = A^2 - eta*B^2`
-- `(A + B*v)^(-1) = conj(A + B*v) / N(A + B*v)`
+- `N_{Fq4/Fq2}(A + B*v) = A^2 - eta*B^2`
+- `(A + B*v)^(-1) = conj(A + B*v) / N_{Fq4/Fq2}(A + B*v)`
+
+These are relative norms from `Fq4` down to `Fq2`.
+
+The quartic tower is also structurally forced by the ring polynomial. Since
+
+`X^64 + 1 = Phi_128(X)`,
+
+the factor degree over `Fq` is controlled by the order of `q` modulo `128`. Here
+
+`q mod 128 = 97`
+
+and `ord_128(q) = 4`, so `X^64 + 1` factors over `Fq` into `64 / 4 = 16` irreducible quartics. Therefore `Fq4` is the smallest extension where the negacyclic ring polynomial splits completely, which is why scalar extension into a quartic field is mathematically natural.
 
 The ring multiplication code scalar-extends into `Fq4`, multiplies there, checks that every accumulated coefficient still lies in the embedded copy of `Fq`, and only then reinterprets that value as a base-field coefficient.
 
@@ -421,11 +447,47 @@ with missing entries treated as zero.
 
 This is the exact accumulator recurrence implemented in `NuMetal-Q/NuFold/PiRLC.swift`. A generic quadratic expansion of a simultaneous relaxed fold would instead involve squared challenge weights and pairwise bilinear terms for all `i < j`. The current note therefore documents PiRLC as a specific accumulator update, not as the generic formula for every quadratic relaxed relation.
 
+To turn this section into a theorem statement, one would first need the exact relaxed-instance invariant `I(C, w, x, y, u, e)` that the code intends the tuple to satisfy, and then a proof that the recurrence above plus the committed cross terms preserve `I`. This note does not currently supply that invariant or preservation proof, so Section 11 should be read as an implementation map rather than a standalone soundness theorem.
+
 ## 12. Norm Budget and PiDEC
 
-Folding grows witness norms, so the repo keeps an explicit operational norm budget.
+Folding grows witness norms, but the implementation variable `currentNorm` is not a certified upper bound for negacyclic multiplication. It is an operational scheduler used together with a fixed PiDEC cadence.
 
-For the recursive accumulator, `currentNorm` tracks a coarse infinity-norm proxy on packed witness rings. The initial value is the maximum coefficient infinity norm of the packed witness. After an `m_fold`-ary PiRLC step, the implementation sets
+### 12.1 Deterministic ring bound
+
+For `a, b in Rq`, the coefficientwise negacyclic convolution satisfies the deterministic inequality
+
+`||a * b||_inf <= ||a||_1 * ||b||_inf <= 64 * ||a||_inf * ||b||_inf`
+
+where
+
+`||a||_1 = sum_i |a_i|_c`.
+
+For a PiRLC challenge ring `rho` with coefficients in `C_rho = {-1, 0, 1, 2}`, one has
+
+`||rho||_inf <= 2`
+
+and
+
+`||rho||_1 <= 64 * 2 = 128`.
+
+Therefore, for a folded witness
+
+`w' = sum_{i=0}^{m_fold-1} rho_i * w_i`,
+
+the safe deterministic bound is
+
+`||w'||_inf <= sum_{i=0}^{m_fold-1} ||rho_i||_1 * ||w_i||_inf`.
+
+If all incoming witnesses satisfy a common bound `||w_i||_inf <= B`, then
+
+`||w'||_inf <= 128 * m_fold * B`.
+
+This `L1/L_inf` estimate is the certified bound available from the ring algebra described in this note.
+
+### 12.2 Why the current scheduler is only heuristic
+
+The implementation in `NuMetal-Q/NuFold/NormBudget.swift` initializes `currentNorm` to the maximum coefficient infinity norm of the packed witness. After an `m_fold`-ary PiRLC step it sets
 
 `challengeMagnitude = max_i ||rho_i||_inf`
 
@@ -433,19 +495,41 @@ and updates:
 
 `currentNorm <- m_fold * currentNorm + challengeMagnitude`
 
-and the fold counter increments.
+and increments the fold counter.
 
-This is the exact scheduler rule in `NuMetal-Q/NuFold/NormBudget.swift`. It is not presented as a proved convolution-operator inequality. A sound analytic derivation would need to specify an operator norm for negacyclic multiplication, for example a bound of the form
+This recurrence is not a valid convolution certificate. A concrete counterexample is
 
-`||rho * w||_inf <= ||rho||_1 * ||w||_inf`.
+`rho = 2 * (1 + X + ... + X^63)`
 
-This note does not derive such a constant, so `currentNorm` should be read as a fixed operational budget tied to the profile's PiDEC cadence, not as a standalone theorem about ring multiplication.
+and
 
-Decomposition is forced by that fixed cadence and serves to re-normalize the witness. After a decomposition, the implementation resets
+`w = 1 + X + ... + X^63`.
+
+Then `||rho||_inf = 2` and `||w||_inf = 1`, but the actual negacyclic product satisfies
+
+`||rho * w||_inf = 128`.
+
+Starting from `currentNorm = 1`, the scheduler above would predict `3`, not `128`. With two such terms in a two-way fold, the true infinity norm can reach `256` while the scheduler predicts only `4`. Accordingly, `currentNorm` must be read as an operational proxy tied to the profile's forced PiDEC cadence, not as a standalone theorem about ring multiplication.
+
+After a decomposition, the implementation resets the proxy by
 
 `currentNorm <- b_dec - 1`.
 
-### Decomposition
+That reset is likewise scheduler bookkeeping rather than a proof artifact.
+
+### 12.3 Canonical one-step proof path
+
+The canonical profile uses PiDEC interval `1`. If each witness entering PiRLC has already been normalized to signed binary digits, so that `||w_i||_inf <= 1`, then the deterministic bound above gives
+
+`||w'||_inf <= 128 * m_fold`.
+
+Since `B_max = 8192`, this stays below the PiDEC representability ceiling whenever
+
+`m_fold < 64`.
+
+So a real proof path exists for the canonical cadence, but it is the `L1/L_inf` bound above, not the current `currentNorm` recurrence.
+
+### 12.4 Decomposition
 
 In the canonical recursive fold path,
 
@@ -465,6 +549,8 @@ Because `b_dec = 2` in the canonical profile, every digit lies in
 
 For a ring element, decomposition is done coefficientwise, producing `L_dec` ring limbs.
 
+The strict inequality is essential: `8191` is representable, while `8192` is not. Any statement or code path using `|c|_c <= B_max` would be too strong.
+
 ### PiDEC commitment check
 
 Let `L_l` be the commitment to the vector of all `l`-th limbs. PiDEC checks:
@@ -473,9 +559,9 @@ Let `L_l` be the commitment to the vector of all `l`-th limbs. PiDEC checks:
 
 The verifier also checks that every output limb coefficient satisfies the centered bound `< b_dec`; in the canonical profile this is equivalent to checking digits in `{-1, 0, 1}`.
 
-## 13. Hachi PCS: General Path
+## 13. Hachi Backend: General Path
 
-The terminal seal layer uses a multilinear opening backend with two modes. In the code this component is called a PCS; mathematically, the general path is an authenticated repetition oracle built on top of the multilinear evaluation table.
+The terminal seal layer uses a multilinear opening backend with two modes. In the code this component is called a PCS backend; mathematically, the general path is an authenticated repetition oracle built on top of the multilinear evaluation table.
 
 For the general path:
 
@@ -521,7 +607,7 @@ with domain
 
 `NuMeQ.Decider.Hachi.Schedule`.
 
-## 14. Hachi PCS: Direct-Packed Path
+## 14. Hachi Backend: Direct-Packed Path
 
 If the packed witness has chunk count in `{1, 2, 4}`, the repo switches to a direct-packed relation opening instead of the codeword/Merkle path.
 
@@ -538,6 +624,8 @@ These weights are chunked into groups of 64 coefficients and then expanded acros
 `lambda_{chunk, limb} = b_dir^limb * chunkWeights`
 
 with `b_dir = 2` and `L_dir = 64` in the direct-packed relation.
+
+Because `(q - 1) / 2 < 2^63`, a `64`-limb signed binary expansion is sufficient for every centered field representative.
 
 ### 14.2 Short linear witness relation
 
@@ -594,11 +682,13 @@ The proof reduces these vector relations by repeated halving:
 
 After logarithmically many rounds, the proof performs a masked response step:
 
-- Gaussian mask rings are sampled with sigmas `4096` and `8192`
+- mask coefficient vectors are sampled as discrete Gaussians over centered integers with sigmas `4096` and `8192`, then reduced coefficientwise into `Fq`
 - response challenge is sampled from `{-1, 0, 1}`
 - responses are accepted only if:
   - all centered coefficients stay below `2^16`
   - the rejection test accepts
+
+Because the accepted centered coefficients stay far below `q / 2`, the centered integer lift used in this step is unambiguous.
 
 The rejection test uses the standard norm-ratio style log condition:
 
