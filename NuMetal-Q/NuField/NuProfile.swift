@@ -238,10 +238,62 @@ public struct ModuleSISCertificate: Sendable, Hashable, Codable {
 public struct PiDECScheduleCertificate: Sendable, Hashable, Codable {
     public let base: UInt8
     public let limbs: UInt8
-    public let certifiedNormCeiling: UInt64
+    public let representabilityCeiling: UInt64
     public let decompositionInterval: Int
     public let maxSupportedDepth: Int
     public let frozenAtCompileTime: Bool
+
+    public init(
+        base: UInt8,
+        limbs: UInt8,
+        representabilityCeiling: UInt64,
+        decompositionInterval: Int,
+        maxSupportedDepth: Int,
+        frozenAtCompileTime: Bool
+    ) {
+        self.base = base
+        self.limbs = limbs
+        self.representabilityCeiling = representabilityCeiling
+        self.decompositionInterval = decompositionInterval
+        self.maxSupportedDepth = maxSupportedDepth
+        self.frozenAtCompileTime = frozenAtCompileTime
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case base
+        case limbs
+        case representabilityCeiling
+        case decompositionInterval
+        case maxSupportedDepth
+        case frozenAtCompileTime
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case certifiedNormCeiling
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        self.base = try container.decode(UInt8.self, forKey: .base)
+        self.limbs = try container.decode(UInt8.self, forKey: .limbs)
+        self.representabilityCeiling =
+            try container.decodeIfPresent(UInt64.self, forKey: .representabilityCeiling)
+            ?? legacyContainer.decode(UInt64.self, forKey: .certifiedNormCeiling)
+        self.decompositionInterval = try container.decode(Int.self, forKey: .decompositionInterval)
+        self.maxSupportedDepth = try container.decode(Int.self, forKey: .maxSupportedDepth)
+        self.frozenAtCompileTime = try container.decode(Bool.self, forKey: .frozenAtCompileTime)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(base, forKey: .base)
+        try container.encode(limbs, forKey: .limbs)
+        try container.encode(representabilityCeiling, forKey: .representabilityCeiling)
+        try container.encode(decompositionInterval, forKey: .decompositionInterval)
+        try container.encode(maxSupportedDepth, forKey: .maxSupportedDepth)
+        try container.encode(frozenAtCompileTime, forKey: .frozenAtCompileTime)
+    }
 }
 
 public struct HachiDeciderCertificate: Sendable, Hashable, Codable {
@@ -470,7 +522,7 @@ public struct ProfileCertificate: Sendable, Codable {
             notes: [
                 "Estimated security bits are informational only and do not constitute a release gate",
                 "Production parameter claims require external cryptanalysis and published review",
-                "PiDEC cadence and norm ceilings are certified invariants, never runtime heuristics",
+                "PiDEC cadence and representability ceilings are fixed profile parameters; runtime currentNorm remains an operational scheduler",
                 "Abstract statements remain in AG64 while convolution-heavy kernels scalar-extend through Fq4 and project back to Fq",
             ]
         )
@@ -526,7 +578,7 @@ public struct ProfileCertificate: Sendable, Codable {
             piDECSchedule: PiDECScheduleCertificate(
                 base: profile.decompBase,
                 limbs: profile.decompLimbs,
-                certifiedNormCeiling: profile.normBound,
+                representabilityCeiling: profile.normBound,
                 decompositionInterval: profile.decompositionInterval,
                 maxSupportedDepth: profile.maxSupportedDepth,
                 frozenAtCompileTime: true
@@ -602,7 +654,7 @@ public struct ProfileCertificate: Sendable, Codable {
             && moduleSIS.decompLimbs == profile.decompLimbs
             && piDECSchedule.base == profile.decompBase
             && piDECSchedule.limbs == profile.decompLimbs
-            && piDECSchedule.certifiedNormCeiling == profile.normBound
+            && piDECSchedule.representabilityCeiling == profile.normBound
             && piDECSchedule.decompositionInterval == profile.decompositionInterval
             && piDECSchedule.maxSupportedDepth == profile.maxSupportedDepth
             && piDECSchedule.frozenAtCompileTime

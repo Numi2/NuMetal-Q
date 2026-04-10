@@ -58,12 +58,21 @@ public actor ProofContext {
     public func seed(witness: Witness, publicInputs: [Fq]) async throws -> ProofHandle {
         try validateSeedInputs(witness: witness, publicInputs: publicInputs)
         let witnessClass = maxWitnessClass(for: witness)
-        let state = try await foldEngine.seed(
-            shape: compiledShape.shape,
-            witness: witness,
-            publicInputs: publicInputs,
-            witnessClass: witnessClass
-        )
+        let state: FoldState
+        do {
+            state = try await foldEngine.seed(
+                shape: compiledShape.shape,
+                witness: witness,
+                publicInputs: publicInputs,
+                witnessClass: witnessClass
+            )
+        } catch FoldEngineError.witnessExceedsPiDECRepresentability(let maxMagnitude, let base, let limbs) {
+            throw ProofContextError.witnessExceedsPiDECRepresentability(
+                maxMagnitude: maxMagnitude,
+                base: base,
+                limbs: limbs
+            )
+        }
         activeStates[state.chainID] = state
         return ProofHandle(chainID: state.chainID, shapeDigest: compiledShape.shape.digest)
     }
@@ -119,13 +128,22 @@ public actor ProofContext {
             keySlotCount: keyParameters.slotCount
         )
         let witnessClass = maxWitnessClass(for: witness)
-        let state = try await foldEngine.seedPrepared(
-            shape: compiledShape.shape,
-            commitment: materialized.commitment,
-            packedWitness: materialized.packedWitness,
-            publicInputs: publicInputs,
-            witnessClass: witnessClass
-        )
+        let state: FoldState
+        do {
+            state = try await foldEngine.seedPrepared(
+                shape: compiledShape.shape,
+                commitment: materialized.commitment,
+                packedWitness: materialized.packedWitness,
+                publicInputs: publicInputs,
+                witnessClass: witnessClass
+            )
+        } catch FoldEngineError.witnessExceedsPiDECRepresentability(let maxMagnitude, let base, let limbs) {
+            throw ProofContextError.witnessExceedsPiDECRepresentability(
+                maxMagnitude: maxMagnitude,
+                base: base,
+                limbs: limbs
+            )
+        }
         activeStates[state.chainID] = state
 
         return ClusterSeedReceipt(

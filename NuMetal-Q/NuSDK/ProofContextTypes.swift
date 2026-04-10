@@ -83,6 +83,7 @@ public enum ProofContextError: Error, Sendable {
     case recursiveFoldingUnavailable
     case unsupportedStoredState
     case accumulatorTooLarge
+    case witnessExceedsPiDECRepresentability(maxMagnitude: UInt64, base: UInt8, limbs: UInt8)
     case policyViolation(PolicyViolation)
     case attestationValidation(AttestationValidationError)
     case clusterResultInvalid

@@ -37,6 +37,21 @@ internal enum ShortLinearWitnessPoKError: Error, Sendable {
 }
 
 internal enum ShortLinearWitnessPoK {
+    private struct DiscreteGaussianTable {
+        let cumulativeMagnitudes: [Double]
+    }
+
+    private static let discreteGaussianSupportMultiplier = 16.0
+    private static let canonicalDiscreteGaussianTables: [UInt32: DiscreteGaussianTable] = {
+        let canonicalSigmas: [UInt32] = [4096, 8192]
+        var tables = [UInt32: DiscreteGaussianTable]()
+        tables.reserveCapacity(canonicalSigmas.count)
+        for sigma in canonicalSigmas {
+            tables[sigma] = buildDiscreteGaussianTable(sigma: sigma)
+        }
+        return tables
+    }()
+
     static func buildWitnessMaterial(
         packedWitness: [RingElement],
         parameters: DirectPackedPoKParameters,
@@ -842,7 +857,7 @@ internal enum ShortLinearWitnessPoK {
         vectorIndex: Int
     ) -> RingElement {
         let coeffs = (0..<RingElement.degree).map { coefficientIndex in
-            gaussianCoefficient(
+            discreteGaussianCoefficient(
                 sigma: sigma,
                 statementDigest: statementDigest,
                 evaluationWeightDigest: evaluationWeightDigest,
@@ -856,7 +871,9 @@ internal enum ShortLinearWitnessPoK {
         return RingElement(coeffs: coeffs)
     }
 
-    private static func gaussianCoefficient(
+    // Inverse-CDF sampler over a centered integer Gaussian with negligible tail
+    // truncation at 16*sigma, then reduced coefficientwise into Fq.
+    private static func discreteGaussianCoefficient(
         sigma: UInt32,
         statementDigest: [UInt8],
         evaluationWeightDigest: [UInt8],
@@ -877,21 +894,81 @@ internal enum ShortLinearWitnessPoK {
         let digest = NuSealCShake256.cshake256(
             data: writer.data,
             domain: "NuMeQ.Decider.Hachi.DirectPacked.GaussianMask",
-            count: 24
+            count: 16
         )
-        let u1Raw = LittleEndianCodec.uint64(from: digest[0..<8])
-        let u2Raw = LittleEndianCodec.uint64(from: digest[8..<16])
-        let signRaw = LittleEndianCodec.uint64(from: digest[16..<24])
-        let u1 = max(Double(u1Raw) / Double(UInt64.max), Double.leastNonzeroMagnitude)
-        let u2 = Double(u2Raw) / Double(UInt64.max)
-        let radius = Double(sigma) * sqrt(-2.0 * log(u1))
-        let theta = 2.0 * Double.pi * u2
-        let sample = Int64((radius * cos(theta)).rounded(.toNearestOrAwayFromZero))
-        let isNegative = sample < 0 || (sample == 0 && (signRaw & 1) == 1)
+        let magnitudeRaw = LittleEndianCodec.uint64(from: digest[0..<8])
+        let signRaw = LittleEndianCodec.uint64(from: digest[8..<16])
+        let magnitude = sampleDiscreteGaussianMagnitude(
+            sigma: sigma,
+            raw: magnitudeRaw
+        )
         return Fq.fromCenteredMagnitude(
-            UInt64(abs(sample)),
-            isNegative: isNegative
+            magnitude,
+            isNegative: magnitude != 0 && (signRaw & 1) == 1
         )
+    }
+
+    private static func sampleDiscreteGaussianMagnitude(
+        sigma: UInt32,
+        raw: UInt64
+    ) -> UInt64 {
+        let table = discreteGaussianTable(for: sigma)
+        let target = unitInterval(from: raw)
+        return UInt64(lowerBound(in: table.cumulativeMagnitudes, target: target))
+    }
+
+    private static func discreteGaussianTable(for sigma: UInt32) -> DiscreteGaussianTable {
+        canonicalDiscreteGaussianTables[sigma] ?? buildDiscreteGaussianTable(sigma: sigma)
+    }
+
+    private static func buildDiscreteGaussianTable(sigma: UInt32) -> DiscreteGaussianTable {
+        let sigmaValue = Double(max(1, sigma))
+        let support = max(1, Int(ceil(sigmaValue * discreteGaussianSupportMultiplier)))
+        let varianceDenominator = 2.0 * sigmaValue * sigmaValue
+
+        var weights = [Double]()
+        weights.reserveCapacity(support + 1)
+        weights.append(1.0)
+        var total = 1.0
+        if support > 0 {
+            for magnitude in 1...support {
+                let magnitudeValue = Double(magnitude)
+                let weight = 2.0 * exp(-(magnitudeValue * magnitudeValue) / varianceDenominator)
+                weights.append(weight)
+                total += weight
+            }
+        }
+
+        var cumulativeMagnitudes = [Double]()
+        cumulativeMagnitudes.reserveCapacity(weights.count)
+        var running = 0.0
+        for weight in weights {
+            running += weight / total
+            cumulativeMagnitudes.append(running)
+        }
+        if cumulativeMagnitudes.isEmpty == false {
+            cumulativeMagnitudes[cumulativeMagnitudes.count - 1] = 1.0
+        }
+
+        return DiscreteGaussianTable(cumulativeMagnitudes: cumulativeMagnitudes)
+    }
+
+    private static func unitInterval(from raw: UInt64) -> Double {
+        Double(raw >> 11) * 0x1p-53
+    }
+
+    private static func lowerBound(in cumulative: [Double], target: Double) -> Int {
+        var lower = 0
+        var upper = cumulative.count
+        while lower < upper {
+            let mid = lower + (upper - lower) / 2
+            if cumulative[mid] < target {
+                lower = mid + 1
+            } else {
+                upper = mid
+            }
+        }
+        return min(lower, max(0, cumulative.count - 1))
     }
 
     private static func rejectionAccepts(
@@ -942,7 +1019,7 @@ internal enum ShortLinearWitnessPoK {
         bound: UInt64
     ) -> Bool {
         (shortResponses + outerResponses).allSatisfy { response in
-            response.coeffs.allSatisfy { $0.centeredMagnitude <= bound }
+            response.coeffs.allSatisfy { $0.centeredMagnitude < bound }
         }
     }
 

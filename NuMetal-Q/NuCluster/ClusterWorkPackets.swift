@@ -22,6 +22,7 @@ public enum ClusterWorkPacketError: Error, Sendable {
     case invalidConfinedIndex
     case laneCommitmentMismatch
     case invalidWitness(WitnessValidationError)
+    case witnessExceedsPiDECRepresentability(maxMagnitude: UInt64, base: UInt8, limbs: UInt8)
 }
 
 public struct ClusterLaneCommitment: Sendable {
@@ -329,6 +330,17 @@ public struct ClusterDecomposeWorkPacket: Sendable {
         let expectedCommitment = AjtaiCommitter.commit(key: key, witness: witness)
         guard expectedCommitment == commitment else {
             throw ClusterWorkPacketError.commitmentMismatch
+        }
+        guard Decomposition.witnessFits(
+            witness,
+            base: decompBase,
+            numLimbs: decompLimbs
+        ) else {
+            throw ClusterWorkPacketError.witnessExceedsPiDECRepresentability(
+                maxMagnitude: Decomposition.maxCenteredMagnitude(in: witness),
+                base: decompBase,
+                limbs: decompLimbs
+            )
         }
 
         var transcript = NuTranscriptField(domain: "NuMeQ.Cluster.PiDEC")

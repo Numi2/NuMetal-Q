@@ -243,7 +243,7 @@ public struct HachiSealParameters: Sendable, Codable, Equatable {
     public let innerRingDegree: UInt32
     public let extensionDegree: UInt8
     public let decompositionBase: UInt8
-    public let certifiedNormCeiling: UInt64
+    public let recursivePiDECRepresentabilityCeiling: UInt64
 
     public init(
         modulus: UInt64,
@@ -251,14 +251,53 @@ public struct HachiSealParameters: Sendable, Codable, Equatable {
         innerRingDegree: UInt32,
         extensionDegree: UInt8,
         decompositionBase: UInt8,
-        certifiedNormCeiling: UInt64
+        recursivePiDECRepresentabilityCeiling: UInt64
     ) {
         self.modulus = modulus
         self.outerRingDegree = outerRingDegree
         self.innerRingDegree = innerRingDegree
         self.extensionDegree = extensionDegree
         self.decompositionBase = decompositionBase
-        self.certifiedNormCeiling = certifiedNormCeiling
+        self.recursivePiDECRepresentabilityCeiling = recursivePiDECRepresentabilityCeiling
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case modulus
+        case outerRingDegree
+        case innerRingDegree
+        case extensionDegree
+        case decompositionBase
+        case recursivePiDECRepresentabilityCeiling
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case certifiedNormCeiling
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        self.modulus = try container.decode(UInt64.self, forKey: .modulus)
+        self.outerRingDegree = try container.decode(UInt32.self, forKey: .outerRingDegree)
+        self.innerRingDegree = try container.decode(UInt32.self, forKey: .innerRingDegree)
+        self.extensionDegree = try container.decode(UInt8.self, forKey: .extensionDegree)
+        self.decompositionBase = try container.decode(UInt8.self, forKey: .decompositionBase)
+        self.recursivePiDECRepresentabilityCeiling =
+            try container.decodeIfPresent(UInt64.self, forKey: .recursivePiDECRepresentabilityCeiling)
+            ?? legacyContainer.decode(UInt64.self, forKey: .certifiedNormCeiling)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(modulus, forKey: .modulus)
+        try container.encode(outerRingDegree, forKey: .outerRingDegree)
+        try container.encode(innerRingDegree, forKey: .innerRingDegree)
+        try container.encode(extensionDegree, forKey: .extensionDegree)
+        try container.encode(decompositionBase, forKey: .decompositionBase)
+        try container.encode(
+            recursivePiDECRepresentabilityCeiling,
+            forKey: .recursivePiDECRepresentabilityCeiling
+        )
     }
 }
 

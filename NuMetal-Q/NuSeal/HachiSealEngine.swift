@@ -14,7 +14,7 @@ public actor HachiSealEngine: NuSealCompiler {
         innerRingDegree: 64,
         extensionDegree: 4,
         decompositionBase: NuProfile.canonical.decompBase,
-        certifiedNormCeiling: NuProfile.canonical.normBound
+        recursivePiDECRepresentabilityCeiling: NuProfile.canonical.normBound
     )
 
     public init() {}

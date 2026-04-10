@@ -55,10 +55,19 @@ public struct PiDEC: Sendable {
         }
     }
 
+    public static func witnessFits(input: Input) -> Bool {
+        Decomposition.witnessFits(
+            input.witness,
+            base: input.decompBase,
+            numLimbs: input.decompLimbs
+        )
+    }
+
     public static func prove(
         input: Input,
         transcript: inout NuTranscriptField
     ) -> Output {
+        precondition(witnessFits(input: input), "PiDEC input witness exceeds representability ceiling")
         transcript.absorbLabel("PiDEC_base=\(input.decompBase)_limbs=\(input.decompLimbs)")
         transcript.absorb(ring: input.commitment.value)
 
@@ -122,6 +131,13 @@ public struct PiDEC: Sendable {
         transcript: inout NuTranscriptField,
         context: MetalContext
     ) async throws -> Output {
+        guard witnessFits(input: input) else {
+            throw PiDECError.witnessExceedsRepresentability(
+                maxMagnitude: Decomposition.maxCenteredMagnitude(in: input.witness),
+                base: input.decompBase,
+                limbs: input.decompLimbs
+            )
+        }
         transcript.absorbLabel("PiDEC_base=\(input.decompBase)_limbs=\(input.decompLimbs)")
         transcript.absorb(ring: input.commitment.value)
 
@@ -196,6 +212,7 @@ public struct PiDEC: Sendable {
     ) throws -> Bool {
         guard output.decomposedWitness.count == input.witness.count else { return false }
         guard output.limbCommitments.count == Int(input.decompLimbs) else { return false }
+        guard witnessFits(input: input) else { return false }
 
         transcript.absorbLabel("PiDEC_base=\(input.decompBase)_limbs=\(input.decompLimbs)")
         transcript.absorb(ring: input.commitment.value)
@@ -275,6 +292,7 @@ public struct PiDEC: Sendable {
     ) -> Bool {
         guard output.decomposedWitness.count == input.witness.count else { return false }
         guard output.limbCommitments.count == Int(input.decompLimbs) else { return false }
+        guard witnessFits(input: input) else { return false }
 
         transcript.absorbLabel("PiDEC_base=\(input.decompBase)_limbs=\(input.decompLimbs)")
         transcript.absorb(ring: input.commitment.value)
@@ -433,4 +451,8 @@ public struct PiDEC: Sendable {
 public struct DecompConsistencyProof: Sendable, Codable, Equatable {
     public let challenge: Fq
     public let reconstructedCommitment: AjtaiCommitment
+}
+
+public enum PiDECError: Error, Sendable {
+    case witnessExceedsRepresentability(maxMagnitude: UInt64, base: UInt8, limbs: UInt8)
 }

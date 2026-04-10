@@ -126,6 +126,7 @@ public actor FoldEngine {
         publicInputs: [Fq],
         witnessClass: WitnessClass
     ) async throws -> FoldState {
+        try requirePiDECRepresentableWitness(packedWitness)
         let witnessFieldCount = shape.relation.n - shape.relation.nPublic
         let witnessFields = WitnessPacking.unpackFieldVector(
             from: packedWitness,
@@ -371,6 +372,7 @@ public actor FoldEngine {
         state: FoldState,
         transcript: inout NuTranscriptField
     ) throws -> FoldState {
+        try requirePiDECRepresentableWitness(state.accumulatedWitness)
         let piDECInput = PiDEC.Input(
             witness: state.accumulatedWitness,
             commitment: state.commitment,
@@ -446,6 +448,7 @@ public actor FoldEngine {
         input: PiDEC.Input,
         transcript: inout NuTranscriptField
     ) async throws -> PiDEC.Output {
+        try requirePiDECRepresentableWitness(input.witness)
         if let metalContext {
             return try await PiDEC.proveMetal(
                 input: input,
@@ -454,6 +457,20 @@ public actor FoldEngine {
             )
         }
         return PiDEC.prove(input: input, transcript: &transcript)
+    }
+
+    private func requirePiDECRepresentableWitness(_ witness: [RingElement]) throws {
+        guard Decomposition.witnessFits(
+            witness,
+            base: config.decompBase,
+            numLimbs: config.decompLimbs
+        ) else {
+            throw FoldEngineError.witnessExceedsPiDECRepresentability(
+                maxMagnitude: Decomposition.maxCenteredMagnitude(in: witness),
+                base: config.decompBase,
+                limbs: config.decompLimbs
+            )
+        }
     }
 
     private func canonicalWitnessFieldVector(
@@ -544,6 +561,7 @@ public actor FoldEngine {
         let normBeforeFold = foldedNormBudget.currentNorm
         let challengeMagnitude = piRLCOutput.ringChallenges.map(\.infinityNorm).max() ?? 0
         foldedNormBudget.recordFold(arity: directArity, challengeMagnitude: challengeMagnitude)
+        try requirePiDECRepresentableWitness(piRLCOutput.foldedWitness)
 
         currentStageAudit.append(
             Self.makeStageRecord(
@@ -1297,6 +1315,7 @@ internal enum FoldEngineError: Error, Sendable {
     case nestedDecompositionUnsupported
     case unsupportedWitnessRepresentation(actualRingCount: Int)
     case witnessPackingExceedsKeySlots(required: Int, available: Int)
+    case witnessExceedsPiDECRepresentability(maxMagnitude: UInt64, base: UInt8, limbs: UInt8)
     case recursiveStageVerificationFailed(stage: FoldStageKind)
 }
 

@@ -372,6 +372,10 @@ public struct NuTranscriptField: Sendable {
         return (0..<count).map { _ in squeezeChallenge() }
     }
 
+    public mutating func squeezeChallengeBytes(label: String, count: Int) -> [UInt8] {
+        squeezeBytesInternal(label: label, count: count)
+    }
+
     public mutating func squeezeBlinding(count: Int) -> [UInt8] {
         squeezeBytesInternal(label: "challenge.blinding", count: count)
     }
@@ -475,17 +479,14 @@ public struct NuSampler: Sendable {
         var coeffs = [Fq](repeating: .zero, count: d)
 
         // Extract 128 bits of challenge material (2 bits per coefficient × 64 coefficients)
-        let challenges = transcript.squeezeChallenges(count: 2)
-        let bits0 = challenges[0].v
-        let bits1 = challenges[1].v
+        let bytes = transcript.squeezeChallengeBytes(
+            label: "challenge.ring",
+            count: d / 4
+        )
 
         for i in 0..<d {
-            let bitPair: UInt64
-            if i < 32 {
-                bitPair = (bits0 >> (UInt64(i) * 2)) & 0x3
-            } else {
-                bitPair = (bits1 >> (UInt64(i - 32) * 2)) & 0x3
-            }
+            let source = bytes[i / 4]
+            let bitPair = UInt64((source >> ((i % 4) * 2)) & 0x3)
             // Map 2-bit value to C = {-1, 0, 1, 2}:
             //   0b00 → -1,  0b01 → 0,  0b10 → 1,  0b11 → 2
             switch bitPair {

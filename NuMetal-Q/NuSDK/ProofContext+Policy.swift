@@ -74,6 +74,19 @@ extension ProofContext {
                 actual: publicInputs.count
             )
         }
+
+        let packedWitness = WitnessPacking.packWitnessToRings(lanes: witness.lanes)
+        guard Decomposition.witnessFits(
+            packedWitness,
+            base: NuProfile.canonical.decompBase,
+            numLimbs: NuProfile.canonical.decompLimbs
+        ) else {
+            throw ProofContextError.witnessExceedsPiDECRepresentability(
+                maxMagnitude: Decomposition.maxCenteredMagnitude(in: packedWitness),
+                base: NuProfile.canonical.decompBase,
+                limbs: NuProfile.canonical.decompLimbs
+            )
+        }
     }
 
     func requirePersistenceEligibility(for state: FoldState) throws {
@@ -113,6 +126,12 @@ extension ProofContext {
             )
         } catch FoldEngineError.witnessPackingExceedsKeySlots {
             throw ProofContextError.accumulatorTooLarge
+        } catch FoldEngineError.witnessExceedsPiDECRepresentability(let maxMagnitude, let base, let limbs) {
+            throw ProofContextError.witnessExceedsPiDECRepresentability(
+                maxMagnitude: maxMagnitude,
+                base: base,
+                limbs: limbs
+            )
         } catch FoldEngineError.invalidAggregateState,
                 FoldEngineError.invalidRecursiveAccumulator,
                 FoldEngineError.invalidPublicInputCount,

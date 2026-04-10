@@ -6,10 +6,10 @@
 // Physical execution must be k-ary and norm-budget aware because
 // SuperNeo provides multi-folding to amortize decomposition costs.
 
-/// Tracks the accumulated norm of a folded witness.
+/// Tracks the accumulated scheduler estimate of a folded witness.
 ///
-/// After each fold, the witness coefficients may grow. When the norm
-/// reaches the certified cadence, a PiDEC decomposition step is executed.
+/// `currentNorm` is an operational proxy used to trigger the fixed PiDEC cadence.
+/// It is not a certified convolution bound for negacyclic multiplication.
 public struct NormBudget: Sendable {
     /// Maximum allowed infinity norm before decomposition is required.
     public let bound: UInt64
@@ -48,7 +48,7 @@ public struct NormBudget: Sendable {
         foldsSinceDecomp >= decompositionInterval
     }
 
-    /// Update norm estimate after a k-ary fold with given challenge magnitude.
+    /// Update the scheduler proxy after a k-ary fold with given challenge magnitude.
     public mutating func recordFold(arity k: Int, challengeMagnitude: UInt64) {
         currentNorm = currentNorm &* UInt64(k) &+ challengeMagnitude
         foldsSinceDecomp += 1
@@ -70,6 +70,60 @@ public struct Decomposition: Sendable {
     public let limbs: [RingElement]
     public let base: UInt64
 
+    public static func coefficientFits(
+        _ coefficient: Fq,
+        base: UInt8,
+        numLimbs: UInt8
+    ) -> Bool {
+        let B = UInt64(base)
+        precondition(B >= 2, "decomposition base must be at least 2")
+        var magnitude = coefficient.centeredMagnitude
+        for _ in 0..<Int(numLimbs) {
+            magnitude /= B
+        }
+        return magnitude == 0
+    }
+
+    public static func elementFits(
+        _ element: RingElement,
+        base: UInt8,
+        numLimbs: UInt8
+    ) -> Bool {
+        element.coeffs.allSatisfy { coefficientFits($0, base: base, numLimbs: numLimbs) }
+    }
+
+    public static func witnessFits(
+        _ witness: [RingElement],
+        base: UInt8,
+        numLimbs: UInt8
+    ) -> Bool {
+        witness.allSatisfy { elementFits($0, base: base, numLimbs: numLimbs) }
+    }
+
+    public static func maxCenteredMagnitude(in witness: [RingElement]) -> UInt64 {
+        witness
+            .flatMap(\.coeffs)
+            .map(\.centeredMagnitude)
+            .max() ?? 0
+    }
+
+    public static func representabilityCeiling(
+        base: UInt8,
+        numLimbs: UInt8
+    ) -> UInt64? {
+        let B = UInt64(base)
+        precondition(B >= 2, "decomposition base must be at least 2")
+        var ceiling: UInt64 = 1
+        for _ in 0..<Int(numLimbs) {
+            let (product, overflow) = ceiling.multipliedReportingOverflow(by: B)
+            if overflow {
+                return nil
+            }
+            ceiling = product
+        }
+        return ceiling
+    }
+
     /// Decompose a ring element into bounded limbs.
     public static func decompose(
         element: RingElement,
@@ -78,6 +132,10 @@ public struct Decomposition: Sendable {
     ) -> Decomposition {
         let B = UInt64(base)
         precondition(B >= 2, "decomposition base must be at least 2")
+        precondition(
+            elementFits(element, base: base, numLimbs: numLimbs),
+            "PiDEC input coefficient exceeds the configured representability ceiling"
+        )
         let limbCount = Int(numLimbs)
         var limbs = [RingElement]()
         limbs.reserveCapacity(limbCount)

@@ -682,7 +682,7 @@ The proof reduces these vector relations by repeated halving:
 
 After logarithmically many rounds, the proof performs a masked response step:
 
-- mask coefficient vectors are sampled as discrete Gaussians over centered integers with sigmas `4096` and `8192`, then reduced coefficientwise into `Fq`
+- mask coefficient vectors are sampled by a cSHAKE-seeded inverse-CDF discrete Gaussian sampler over centered integers with sigmas `4096` and `8192`; the implementation truncates support at `16 sigma`, where the omitted tail is negligible for the canonical parameters, and then reduces coefficientwise into `Fq`
 - response challenge is sampled from `{-1, 0, 1}`
 - responses are accepted only if:
   - all centered coefficients stay below `2^16`
