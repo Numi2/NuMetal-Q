@@ -100,7 +100,11 @@ public enum SealProofCodec {
             deciderLayoutDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
             sealParamDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
             publicHeader: try reader.readLengthPrefixedData(maxCount: Limits.publicHeaderBytes),
-            publicInputs: try decodeFqArray(from: &reader, maxCount: Limits.publicInputs)
+            publicInputs: try decodeFqArray(
+                from: &reader,
+                minCount: 1,
+                maxCount: Limits.publicInputs
+            )
         )
         return statement
     }
@@ -602,10 +606,11 @@ public enum SealProofCodec {
 
     static func decodeFqArray(
         from reader: inout BinaryReader,
+        minCount: Int = 0,
         maxCount: Int = Limits.publicInputs
     ) throws -> [Fq] {
         let count = Int(try reader.readUInt32())
-        guard count <= maxCount else {
+        guard count >= minCount, count <= maxCount else {
             throw BinaryReader.Error.invalidData
         }
         var values = [Fq]()

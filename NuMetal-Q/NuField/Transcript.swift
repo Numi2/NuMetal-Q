@@ -462,31 +462,33 @@ extension NuTranscriptField: NuFieldTranscript {
 
 /// Typed challenge sampler for SuperNeo protocol challenges.
 ///
-/// Provides domain-specific sampling from the profile's challenge sets
-/// rather than generic field sampling followed by range massage.
+/// Provides domain-specific sampling from the profile's challenge sets while
+/// preserving the canonical Fiat-Shamir transcript schedule.
 public struct NuSampler: Sendable {
 
     /// Sample a ring challenge from the coefficient set C = {-1, 0, 1, 2}.
     ///
-    /// For the Almost Goldilocks profile, |C|^d = 4^64 = 2^128 ≈ 129-bit security.
-    /// Each of the 64 coefficients is independently drawn from {-1, 0, 1, 2}
-    /// using 2 bits of challenge entropy per coefficient (128 bits total).
+    /// The sampler consumes the canonical field-challenge stream rather than a
+    /// ring-specific byte stream so transcript schedules stay identical across
+    /// implementations and test-vector references.
     ///
-    /// This is a first-class typed sampler: the output IS a ring challenge
-    /// from C, not a generic field element projected into C.
+    /// For the Almost Goldilocks profile, |C|^d = 4^64 = 2^128 ≈ 129-bit security.
+    /// Each field challenge contributes 64 bits of transcript output, which we
+    /// reinterpret as 32 independent 2-bit coefficients.
+    ///
+    /// The output is still a typed ring challenge from C, but its entropy comes
+    /// from the same canonical Fiat-Shamir stream used by scalar challenges.
     public static func challengeRingFromC(transcript: inout NuTranscriptField) -> RingElement {
         let d = RingElement.degree
         var coeffs = [Fq](repeating: .zero, count: d)
-
-        // Extract 128 bits of challenge material (2 bits per coefficient × 64 coefficients)
-        let bytes = transcript.squeezeChallengeBytes(
-            label: "challenge.ring",
-            count: d / 4
-        )
+        let coefficientsPerChallenge = MemoryLayout<UInt64>.size * 4
+        let challengeWords = transcript
+            .squeezeChallenges(count: (d + coefficientsPerChallenge - 1) / coefficientsPerChallenge)
+            .map(\.v)
 
         for i in 0..<d {
-            let source = bytes[i / 4]
-            let bitPair = UInt64((source >> ((i % 4) * 2)) & 0x3)
+            let source = challengeWords[i / coefficientsPerChallenge]
+            let bitPair = UInt64((source >> (UInt64(i % coefficientsPerChallenge) * 2)) & 0x3)
             // Map 2-bit value to C = {-1, 0, 1, 2}:
             //   0b00 → -1,  0b01 → 0,  0b10 → 1,  0b11 → 2
             switch bitPair {
