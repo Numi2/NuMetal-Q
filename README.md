@@ -34,4 +34,5 @@ swift run NuMetalQBenchmarks
 ## Notes
 
 - The canonical proving stack stays on the AG64 profile described in the package sources.
+- Math reference: see `MATH.md` for the consolidated algebra and protocol notes.
 - The Xcode project is optional convenience metadata; the Swift package is the authoritative build entry point.
