@@ -4,6 +4,12 @@ import CryptoKit
 public struct ResumeArtifact: Sendable, Equatable {
     public static let currentVersion: UInt16 = 1
 
+    private enum Limits {
+        static let digestBytes = 32
+        static let ciphertextBytes = 16 * 1024 * 1024
+        static let wrappedArtifactKeysBytes = 16 * 1024
+    }
+
     public let version: UInt16
     public let proofDigest: Data
     public let ciphertext: Data
@@ -41,11 +47,11 @@ public struct ResumeArtifact: Sendable, Equatable {
     public static func deserialize(_ data: Data) throws -> ResumeArtifact {
         var reader = BinaryReader(data)
         let version = try reader.readUInt16()
-        let proofDigest = try reader.readLengthPrefixedData()
-        let ciphertext = try reader.readLengthPrefixedData()
+        let proofDigest = try reader.readLengthPrefixedData(maxCount: Limits.digestBytes)
+        let ciphertext = try reader.readLengthPrefixedData(maxCount: Limits.ciphertextBytes)
         let nonce = try reader.readData(count: 12)
         let tag = try reader.readData(count: 16)
-        let wrappedArtifactKeys = try reader.readLengthPrefixedData()
+        let wrappedArtifactKeys = try reader.readLengthPrefixedData(maxCount: Limits.wrappedArtifactKeysBytes)
         guard reader.isAtEnd else {
             throw BinaryReader.Error.invalidData
         }

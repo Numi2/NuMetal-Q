@@ -48,6 +48,15 @@ final class EnvelopeSecurityTests: XCTestCase {
         }
     }
 
+    func testSealProofCodecRejectsOversizedPublicInputVectorCount() throws {
+        XCTAssertThrowsError(try SealProofCodec.deserialize(makeOversizedPublicInputsSealProof())) { error in
+            guard let codecError = error as? BinaryReader.Error,
+                  case .invalidData = codecError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
     func testPublicStatementBindingRejectsMismatchedHeaderEncoding() throws {
         let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "HeaderBindingMismatch")
         let mismatchedHeader = Data([1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0])
@@ -70,6 +79,9 @@ final class EnvelopeSecurityTests: XCTestCase {
             envelope: envelope,
             compiledShape: compiledShape,
             verifySignature: AcceptanceSupport.verifier,
+            expectedSignerKeyID: envelope.signerKeyID,
+            expectedAppID: envelope.appID,
+            expectedTeamID: envelope.teamID,
             attestationVerifier: AcceptanceSupport.attestationVerifier,
             requireAttestation: true
         )
@@ -93,6 +105,9 @@ final class EnvelopeSecurityTests: XCTestCase {
             envelope: tampered,
             compiledShape: compiledShape,
             verifySignature: AcceptanceSupport.verifier,
+            expectedSignerKeyID: tampered.signerKeyID,
+            expectedAppID: tampered.appID,
+            expectedTeamID: tampered.teamID,
             attestationVerifier: AcceptanceSupport.attestationVerifier,
             requireAttestation: true
         )
@@ -114,6 +129,9 @@ final class EnvelopeSecurityTests: XCTestCase {
             envelope: attested,
             compiledShape: compiledShape,
             verifySignature: AcceptanceSupport.verifier,
+            expectedSignerKeyID: attested.signerKeyID,
+            expectedAppID: attested.appID,
+            expectedTeamID: attested.teamID,
             attestationVerifier: AcceptanceSupport.attestationVerifier,
             requireAttestation: true
         )
@@ -133,11 +151,68 @@ final class EnvelopeSecurityTests: XCTestCase {
         let verification = try await engine.verify(
             envelope: envelope,
             compiledShape: compiledShape,
-            verifySignature: AcceptanceSupport.verifier
+            verifySignature: AcceptanceSupport.verifier,
+            expectedSignerKeyID: envelope.signerKeyID,
+            expectedAppID: envelope.appID,
+            expectedTeamID: envelope.teamID
         )
 
         XCTAssertFalse(verification.isValid)
         XCTAssertEqual(verification.reason, .invalidTimestamp)
+    }
+
+    func testVerificationRejectsAppNamespaceMismatch() async throws {
+        let engine = try await AcceptanceSupport.makeEngine()
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "AppNamespaceMismatch")
+        let envelope = try AcceptanceSupport.makeSyntheticEnvelope(compiledShape: compiledShape)
+
+        let verification = try await engine.verify(
+            envelope: envelope,
+            compiledShape: compiledShape,
+            verifySignature: AcceptanceSupport.verifier,
+            expectedSignerKeyID: envelope.signerKeyID,
+            expectedAppID: "NuMetalQ.Tests.Other",
+            expectedTeamID: envelope.teamID
+        )
+
+        XCTAssertFalse(verification.isValid)
+        XCTAssertEqual(verification.reason, .appIDMismatch)
+    }
+
+    func testVerificationRejectsTeamNamespaceMismatch() async throws {
+        let engine = try await AcceptanceSupport.makeEngine()
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "TeamNamespaceMismatch")
+        let envelope = try AcceptanceSupport.makeSyntheticEnvelope(compiledShape: compiledShape)
+
+        let verification = try await engine.verify(
+            envelope: envelope,
+            compiledShape: compiledShape,
+            verifySignature: AcceptanceSupport.verifier,
+            expectedSignerKeyID: envelope.signerKeyID,
+            expectedAppID: envelope.appID,
+            expectedTeamID: "NuMetalQ.OtherTeam"
+        )
+
+        XCTAssertFalse(verification.isValid)
+        XCTAssertEqual(verification.reason, .teamIDMismatch)
+    }
+
+    func testVerificationRejectsUnexpectedSignerKeyIDInPlainVerifierOverload() async throws {
+        let engine = try await AcceptanceSupport.makeEngine()
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "SignerKeyIDMismatch")
+        let envelope = try AcceptanceSupport.makeSyntheticEnvelope(compiledShape: compiledShape)
+
+        let verification = try await engine.verify(
+            envelope: envelope,
+            compiledShape: compiledShape,
+            verifySignature: AcceptanceSupport.verifier,
+            expectedSignerKeyID: Data("wrong-signer".utf8),
+            expectedAppID: envelope.appID,
+            expectedTeamID: envelope.teamID
+        )
+
+        XCTAssertFalse(verification.isValid)
+        XCTAssertEqual(verification.reason, .signatureInvalid)
     }
 
     func testSealRequiresAttestationForStandardPolicyExport() async throws {
@@ -190,6 +265,28 @@ final class EnvelopeSecurityTests: XCTestCase {
         XCTAssertTrue(try decoded.isSignatureValid { message, signature, _ in
             try AcceptanceSupport.verifier(message, signature)
         })
+    }
+
+    func testProofEnvelopeDeserializeRejectsOversizedProofBlobLengthPrefix() throws {
+        var writer = BinaryWriter()
+        writer.append(ProofEnvelope.currentVersion)
+        writer.append(Data(NuProfile.canonical.profileID.bytes))
+        writer.appendLengthPrefixed(Data("NuMetalQ.Tests".utf8))
+        writer.appendLengthPrefixed(Data("NuMetalQ".utf8))
+        writer.append(Data(ShapeDigest(bytes: [UInt8](repeating: 0x11, count: 32)).bytes))
+        writer.appendLengthPrefixed(Data(repeating: 0x22, count: 32))
+        writer.appendLengthPrefixed(Data())
+        writer.appendLengthPrefixed(Data(NuSealConstants.productionBackendID.utf8))
+        writer.appendLengthPrefixed(Data(repeating: 0x33, count: 32))
+        writer.append(PrivacyMode.fullZK.rawValue)
+        writer.append(UInt32(16 * 1024 * 1024 + 1))
+
+        XCTAssertThrowsError(try ProofEnvelope.deserialize(writer.data)) { error in
+            guard let readerError = error as? BinaryReader.Error,
+                  case .invalidData = readerError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
     }
 
     func testConstrainedRelationRejectsInvalidWitnessBinding() async throws {
@@ -270,4 +367,26 @@ private func makeMinimalPublicSealProof(instanceCount: UInt32) -> PublicSealProo
         errorTerms: []
     )
     return PublicSealProof(statement: statement, terminalProof: terminalProof)
+}
+
+private func makeOversizedPublicInputsSealProof() throws -> Data {
+    var serialized = try SealProofCodec.serialize(makeMinimalPublicSealProof(instanceCount: 1))
+    let backendIDBytes = NuSealConstants.productionBackendID.utf8.count
+    let transcriptIDBytes = NuSealConstants.sealTranscriptID.utf8.count
+    let offset =
+        8
+        + 2
+        + 4 + backendIDBytes
+        + 4 + transcriptIDBytes
+        + 32
+        + 4
+        + 4
+        + 4
+        + 4
+        + RingElement.degree * MemoryLayout<UInt64>.size
+    let oversizedCount = UInt32(65_537).littleEndian
+    withUnsafeBytes(of: oversizedCount) { bytes in
+        serialized.replaceSubrange(offset..<offset + MemoryLayout<UInt32>.size, with: bytes)
+    }
+    return serialized
 }

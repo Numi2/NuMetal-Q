@@ -60,6 +60,11 @@ public struct PQSigningIdentity: Sendable {
 /// this type so the private resume payload can be opened with an ML-KEM
 /// private key.
 public struct WrappedArtifactKey: Sendable, Codable, Equatable {
+    private enum Limits {
+        static let algorithmBytes = 64
+        static let encapsulatedKeyBytes = 16 * 1024
+    }
+
     public let algorithm: ApplePostQuantumAlgorithm
     public let encapsulatedKey: Data
 
@@ -77,8 +82,8 @@ public struct WrappedArtifactKey: Sendable, Codable, Equatable {
 
     public static func deserialize(_ data: Data) throws -> WrappedArtifactKey {
         var reader = BinaryReader(data)
-        let algorithmData = try reader.readLengthPrefixedData()
-        let encapsulatedKey = try reader.readLengthPrefixedData()
+        let algorithmData = try reader.readLengthPrefixedData(maxCount: Limits.algorithmBytes)
+        let encapsulatedKey = try reader.readLengthPrefixedData(maxCount: Limits.encapsulatedKeyBytes)
         guard reader.isAtEnd,
               let rawAlgorithm = String(data: algorithmData, encoding: .utf8),
               let algorithm = ApplePostQuantumAlgorithm(rawValue: rawAlgorithm) else {

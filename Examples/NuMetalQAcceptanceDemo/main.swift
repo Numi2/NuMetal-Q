@@ -252,6 +252,7 @@ struct NuMetalQAcceptanceDemo {
             compiledShape: compiledShape,
             policy: .standard,
             appID: "NuMetalQ.AcceptanceDemo.SDK",
+            teamID: demoTeamID,
             attestationVerifier: demoAttestationVerifier
         )
 
@@ -289,6 +290,8 @@ struct NuMetalQAcceptanceDemo {
             envelope: sealedExport.proofEnvelope,
             compiledShape: compiledShape,
             verifySignature: signer.verifyEnvelope,
+            expectedAppID: "NuMetalQ.AcceptanceDemo.SDK",
+            expectedTeamID: demoTeamID,
             attestationVerifier: demoAttestationVerifier,
             requireAttestation: true
         )
@@ -364,6 +367,7 @@ struct NuMetalQAcceptanceDemo {
             compiledShape: clusterShape,
             policy: confinedPolicy,
             appID: "NuMetalQ.AcceptanceDemo.ClusterSeed",
+            teamID: demoTeamID,
             attestationVerifier: demoAttestationVerifier
         )
         let clusterSeedReceipt = try await confinedContext.seedUsingCluster(
@@ -391,6 +395,7 @@ struct NuMetalQAcceptanceDemo {
             compiledShape: compiledShape,
             policy: .standard,
             appID: "NuMetalQ.AcceptanceDemo.ClusterSeal",
+            teamID: demoTeamID,
             attestationVerifier: demoAttestationVerifier
         )
         let delegatableHandle = try await clusterSealContext.seed(
@@ -417,6 +422,8 @@ struct NuMetalQAcceptanceDemo {
             envelope: clusterExport.proofEnvelope,
             compiledShape: compiledShape,
             verifySignature: signer.verifyEnvelope,
+            expectedAppID: "NuMetalQ.AcceptanceDemo.ClusterSeal",
+            expectedTeamID: demoTeamID,
             attestationVerifier: demoAttestationVerifier,
             requireAttestation: true
         )
@@ -671,6 +678,7 @@ private struct SyncDemoReport {
 }
 
 private extension NuMetalQAcceptanceDemo {
+    static let demoTeamID = "NuMetalQ.AcceptanceDemo"
     static let syncSharedSecret = Data(repeating: 0x33, count: 32)
     static let syncSalt = Data("NuMetalQ.Sync.Salt".utf8)
     static let syncInfo = Data("NuMetalQ.Sync.Info".utf8)
@@ -732,6 +740,7 @@ private extension NuMetalQAcceptanceDemo {
                 return false
             }
             return context.appID?.hasPrefix("NuMetalQ.AcceptanceDemo") == true
+                && context.teamID == demoTeamID
                 && context.shapeDigest != nil
                 && context.signerKeyID?.isEmpty == false
                 && context.payloadDigest.isEmpty == false

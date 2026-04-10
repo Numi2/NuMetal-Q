@@ -87,6 +87,8 @@ public actor NuMeQ {
         envelope: ProofEnvelope,
         compiledShape: CompiledShape,
         verifySignature: PQKeyedVerifyClosure,
+        expectedAppID: String,
+        expectedTeamID: String,
         attestationVerifier: AttestationVerifier? = nil,
         requireAttestation: Bool = false
     ) async throws -> VerificationResult {
@@ -94,6 +96,8 @@ public actor NuMeQ {
             envelope: envelope,
             compiledShape: compiledShape,
             verifySignature: verifySignature,
+            expectedAppID: expectedAppID,
+            expectedTeamID: expectedTeamID,
             attestationVerifier: attestationVerifier,
             requireAttestation: requireAttestation,
             executionMode: .automatic,
@@ -105,6 +109,8 @@ public actor NuMeQ {
         envelope: ProofEnvelope,
         compiledShape: CompiledShape,
         verifySignature: PQKeyedVerifyClosure,
+        expectedAppID: String,
+        expectedTeamID: String,
         attestationVerifier: AttestationVerifier? = nil,
         requireAttestation: Bool = false,
         executionMode: VerificationExecutionMode,
@@ -141,6 +147,13 @@ public actor NuMeQ {
         guard envelope.sealParamDigest == Data(params.seal.parameterDigest) else {
             return VerificationResult(isValid: false, reason: .proofInvalid)
         }
+        if let namespaceFailure = envelopeMatchesNamespace(
+            envelope: envelope,
+            expectedAppID: expectedAppID,
+            expectedTeamID: expectedTeamID
+        ) {
+            return VerificationResult(isValid: false, reason: namespaceFailure)
+        }
 
         if requireAttestation || (attestationVerifier != nil && envelope.attestation != nil) {
             guard let attestation = envelope.attestation, attestation.isEmpty == false else {
@@ -152,6 +165,7 @@ public actor NuMeQ {
             let context = AttestationContext(
                 purpose: .envelopeVerification,
                 appID: envelope.appID,
+                teamID: envelope.teamID,
                 shapeDigest: envelope.shapeDigest,
                 signerKeyID: envelope.signerKeyID,
                 timestamp: envelope.timestamp,
@@ -195,16 +209,22 @@ public actor NuMeQ {
     public func verify(
         envelope: ProofEnvelope,
         compiledShape: CompiledShape,
-        verifySignature: PQVerifyClosure,
+        verifySignature: @escaping PQVerifyClosure,
+        expectedSignerKeyID: Data,
+        expectedAppID: String,
+        expectedTeamID: String,
         attestationVerifier: AttestationVerifier? = nil,
         requireAttestation: Bool = false
     ) async throws -> VerificationResult {
         try await verify(
             envelope: envelope,
             compiledShape: compiledShape,
-            verifySignature: { message, signature, _ in
-                try verifySignature(message, signature)
-            },
+            verifySignature: keyedEnvelopeVerifier(
+                expectedSignerKeyID: expectedSignerKeyID,
+                verifySignature: verifySignature
+            ),
+            expectedAppID: expectedAppID,
+            expectedTeamID: expectedTeamID,
             attestationVerifier: attestationVerifier,
             requireAttestation: requireAttestation
         )
@@ -219,7 +239,7 @@ public actor NuMeQ {
     public var publicParams: NuParams { params }
 
     /// Generate the machine-checkable profile certificate that freezes the
-    /// AG64 field tower, decider contract, schedule invariants, and release gate.
+    /// AG64 field tower, decider contract, schedule invariants, and informational estimator.
     public func generateCertificate() -> ProfileCertificate {
         ProfileCertificate.generate(for: profile)
     }

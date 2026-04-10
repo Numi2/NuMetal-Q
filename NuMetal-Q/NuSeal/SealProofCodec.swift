@@ -3,6 +3,27 @@ import Foundation
 public enum SealProofCodec {
     private static let magic = Data("NuSealZK".utf8)
 
+    fileprivate enum Limits {
+        static let digestBytes = 32
+        static let backendIDBytes = 128
+        static let transcriptIDBytes = 128
+        static let publicHeaderBytes = 64 * 1024
+        static let publicInputs = 65_536
+        static let ringElements = 65_536
+        static let sumcheckRounds = 4_096
+        static let sumcheckEvaluations = 64
+        static let pcsClasses = 4_096
+        static let pcsOpenings = 4_096
+        static let merklePathNodes = 256
+        static let shortLinearRounds = 4_096
+        static let shortLinearResponses = 4_096
+        static let commitments = 4_096
+        static let shortTranscriptBindingBytes = 64
+        static let oracleDigestBytes = 64
+        static let accumulatorArtifactBytes = 16 * 1024 * 1024
+        static let resumeStageAuditRecords = 16_384
+    }
+
     public static func serialize(_ proof: PublicSealProof) throws -> Data {
         var writer = BinaryWriter()
         writer.append(magic)
@@ -77,17 +98,17 @@ public enum SealProofCodec {
 
     private static func decodeStatement(from reader: inout BinaryReader) throws -> PublicSealStatement {
         let statement = PublicSealStatement(
-            backendID: try decodeString(from: &reader),
-            sealTranscriptID: try decodeString(from: &reader),
+            backendID: try decodeString(from: &reader, maxBytes: Limits.backendIDBytes),
+            sealTranscriptID: try decodeString(from: &reader, maxBytes: Limits.transcriptIDBytes),
             shapeDigest: try decodeShapeDigest(from: &reader),
-            deciderLayoutDigest: try reader.readLengthPrefixedBytes(),
-            sealParamDigest: try reader.readLengthPrefixedBytes(),
-            publicHeader: try reader.readLengthPrefixedData(),
+            deciderLayoutDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
+            sealParamDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
+            publicHeader: try reader.readLengthPrefixedData(maxCount: Limits.publicHeaderBytes),
             instanceCount: try reader.readUInt32(),
             finalAccumulatorCommitment: try decodeCommitment(from: &reader),
-            publicInputs: try decodeFqArray(from: &reader),
+            publicInputs: try decodeFqArray(from: &reader, maxCount: Limits.publicInputs),
             relaxationFactor: try decodeFq(from: &reader),
-            errorTerms: try decodeRingArray(from: &reader)
+            errorTerms: try decodeRingArray(from: &reader, maxCount: Limits.ringElements)
         )
         guard statement.instanceCount > 0 else {
             throw BinaryReader.Error.invalidData
@@ -143,10 +164,13 @@ public enum SealProofCodec {
 
     private static func decodeSumcheck(from reader: inout BinaryReader) throws -> SpartanSumcheckProof {
         let roundCount = Int(try reader.readUInt32())
+        guard roundCount <= Limits.sumcheckRounds else {
+            throw BinaryReader.Error.invalidData
+        }
         var rounds = [[Fq]]()
         rounds.reserveCapacity(roundCount)
         for _ in 0..<roundCount {
-            rounds.append(try decodeFqArray(from: &reader))
+            rounds.append(try decodeFqArray(from: &reader, maxCount: Limits.sumcheckEvaluations))
         }
         let terminalMask = try decodeFq(from: &reader)
         return SpartanSumcheckProof(roundEvaluations: rounds, terminalMask: terminalMask)
@@ -161,9 +185,9 @@ public enum SealProofCodec {
 
     private static func decodeClaimedEvaluations(from reader: inout BinaryReader) throws -> SpartanClaimedEvaluations<Fq> {
         SpartanClaimedEvaluations(
-            rowPoint: try decodeFqArray(from: &reader),
-            columnPoint: try decodeFqArray(from: &reader),
-            matrixRowEvaluations: try decodeFqArray(from: &reader),
+            rowPoint: try decodeFqArray(from: &reader, maxCount: Limits.publicInputs),
+            columnPoint: try decodeFqArray(from: &reader, maxCount: Limits.publicInputs),
+            matrixRowEvaluations: try decodeFqArray(from: &reader, maxCount: Limits.publicInputs),
             witnessEvaluation: try decodeFq(from: &reader)
         )
     }
@@ -175,7 +199,7 @@ public enum SealProofCodec {
 
     private static func decodeBlindingEvaluations(from reader: inout BinaryReader) throws -> SpartanBlindingEvaluations<Fq> {
         SpartanBlindingEvaluations(
-            matrixRows: try decodeFqArray(from: &reader),
+            matrixRows: try decodeFqArray(from: &reader, maxCount: Limits.publicInputs),
             witness: try decodeFq(from: &reader)
         )
     }
@@ -189,8 +213,11 @@ public enum SealProofCodec {
     }
 
     private static func decodeBatchOpeningProof(from reader: inout BinaryReader) throws -> HachiPCSBatchOpeningProof {
-        let batchSeedDigest = try reader.readLengthPrefixedBytes()
+        let batchSeedDigest = try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes)
         let classCount = Int(try reader.readUInt32())
+        guard classCount <= Limits.pcsClasses else {
+            throw BinaryReader.Error.invalidData
+        }
         var classes = [HachiPCSBatchClassOpeningProof]()
         classes.reserveCapacity(classCount)
         for _ in 0..<classCount {
@@ -210,10 +237,13 @@ public enum SealProofCodec {
     }
 
     private static func decodeBatchClassProof(from reader: inout BinaryReader) throws -> HachiPCSBatchClassOpeningProof {
-        let point = try decodeFqArray(from: &reader)
-        let pointDigest = try reader.readLengthPrefixedBytes()
-        let scheduleDigest = try reader.readLengthPrefixedBytes()
+        let point = try decodeFqArray(from: &reader, maxCount: Limits.publicInputs)
+        let pointDigest = try reader.readLengthPrefixedBytes(maxCount: Limits.oracleDigestBytes)
+        let scheduleDigest = try reader.readLengthPrefixedBytes(maxCount: Limits.oracleDigestBytes)
         let openingCount = Int(try reader.readUInt32())
+        guard openingCount <= Limits.pcsOpenings else {
+            throw BinaryReader.Error.invalidData
+        }
         var openings = [HachiPCSOpening]()
         openings.reserveCapacity(openingCount)
         for _ in 0..<openingCount {
@@ -250,8 +280,8 @@ public enum SealProofCodec {
     private static func decodeOpening(from reader: inout BinaryReader) throws -> HachiPCSOpening {
         let oracle = try decodeOracleID(from: &reader)
         let evaluation = try decodeFq(from: &reader)
-        let scheduleDigest = try reader.readLengthPrefixedBytes()
-        let evaluationDigest = try reader.readLengthPrefixedBytes()
+        let scheduleDigest = try reader.readLengthPrefixedBytes(maxCount: Limits.oracleDigestBytes)
+        let evaluationDigest = try reader.readLengthPrefixedBytes(maxCount: Limits.oracleDigestBytes)
         guard let mode = HachiPCSOpeningMode(rawValue: try reader.readUInt8()) else {
             throw BinaryReader.Error.invalidData
         }
@@ -300,10 +330,13 @@ public enum SealProofCodec {
         let codewordIndex = try reader.readUInt32()
         let codewordValue = try decodeFq(from: &reader)
         let pathCount = Int(try reader.readUInt32())
+        guard pathCount <= Limits.merklePathNodes else {
+            throw BinaryReader.Error.invalidData
+        }
         var path = [[UInt8]]()
         path.reserveCapacity(pathCount)
         for _ in 0..<pathCount {
-            path.append(try reader.readLengthPrefixedBytes())
+            path.append(try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes))
         }
         return HachiGeneralPCSOpeningProof(
             codewordIndex: codewordIndex,
@@ -329,12 +362,15 @@ public enum SealProofCodec {
             accumulatorRounds: try decodeAccumulatorRounds(from: &reader),
             finalOpening: try decodeShortLinearWitnessFinalOpening(from: &reader),
             restartNonce: try reader.readUInt32(),
-            transcriptBinding: try reader.readLengthPrefixedBytes()
+            transcriptBinding: try reader.readLengthPrefixedBytes(maxCount: Limits.shortTranscriptBindingBytes)
         )
     }
 
     private static func decodeAccumulatorRounds(from reader: inout BinaryReader) throws -> [ShortLinearWitnessAccumulatorRound] {
         let roundCount = Int(try reader.readUInt32())
+        guard roundCount <= Limits.shortLinearRounds else {
+            throw BinaryReader.Error.invalidData
+        }
         var rounds = [ShortLinearWitnessAccumulatorRound]()
         rounds.reserveCapacity(roundCount)
         for _ in 0..<roundCount {
@@ -388,12 +424,18 @@ public enum SealProofCodec {
         let evaluationMaskCommitment = try decodeCommitment(from: &reader)
         let outerMaskCommitment = try decodeCommitment(from: &reader)
         let shortCount = Int(try reader.readUInt32())
+        guard shortCount <= Limits.shortLinearResponses else {
+            throw BinaryReader.Error.invalidData
+        }
         var shortResponses = [RingElement]()
         shortResponses.reserveCapacity(shortCount)
         for _ in 0..<shortCount {
             shortResponses.append(try decodeRing(from: &reader))
         }
         let outerCount = Int(try reader.readUInt32())
+        guard outerCount <= Limits.shortLinearResponses else {
+            throw BinaryReader.Error.invalidData
+        }
         var outerResponses = [RingElement]()
         outerResponses.reserveCapacity(outerCount)
         for _ in 0..<outerCount {
@@ -439,13 +481,13 @@ public enum SealProofCodec {
             mode: try decodeCommitmentMode(from: &reader),
             tableCommitment: try decodeCommitment(from: &reader),
             directPackedOuterCommitments: try decodeCommitmentArray(from: &reader),
-            tableDigest: try reader.readLengthPrefixedBytes(),
-            merkleRoot: try reader.readLengthPrefixedBytes(),
-            parameterDigest: try reader.readLengthPrefixedBytes(),
+            tableDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
+            merkleRoot: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
+            parameterDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
             valueCount: try reader.readUInt32(),
             codewordLength: try reader.readUInt32(),
             packedChunkCount: try reader.readUInt32(),
-            statementDigest: try reader.readLengthPrefixedBytes()
+            statementDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes)
         )
     }
 
@@ -458,6 +500,9 @@ public enum SealProofCodec {
 
     private static func decodeCommitmentArray(from reader: inout BinaryReader) throws -> [AjtaiCommitment] {
         let count = Int(try reader.readUInt32())
+        guard count <= Limits.commitments else {
+            throw BinaryReader.Error.invalidData
+        }
         var commitments = [AjtaiCommitment]()
         commitments.reserveCapacity(count)
         for _ in 0..<count {
@@ -468,6 +513,9 @@ public enum SealProofCodec {
 
     private static func decodeHachiCommitmentArray(from reader: inout BinaryReader) throws -> [HachiPCSCommitment] {
         let count = Int(try reader.readUInt32())
+        guard count <= Limits.commitments else {
+            throw BinaryReader.Error.invalidData
+        }
         var commitments = [HachiPCSCommitment]()
         commitments.reserveCapacity(count)
         for _ in 0..<count {
@@ -521,8 +569,11 @@ public enum SealProofCodec {
         writer.appendLengthPrefixed(Data(value.utf8))
     }
 
-    private static func decodeString(from reader: inout BinaryReader) throws -> String {
-        let data = try reader.readLengthPrefixedData()
+    private static func decodeString(
+        from reader: inout BinaryReader,
+        maxBytes: Int
+    ) throws -> String {
+        let data = try reader.readLengthPrefixedData(maxCount: maxBytes)
         guard let value = String(data: data, encoding: .utf8) else {
             throw BinaryReader.Error.invalidData
         }
@@ -560,8 +611,14 @@ public enum SealProofCodec {
         }
     }
 
-    static func decodeFqArray(from reader: inout BinaryReader) throws -> [Fq] {
+    static func decodeFqArray(
+        from reader: inout BinaryReader,
+        maxCount: Int = Limits.publicInputs
+    ) throws -> [Fq] {
         let count = Int(try reader.readUInt32())
+        guard count <= maxCount else {
+            throw BinaryReader.Error.invalidData
+        }
         var values = [Fq]()
         values.reserveCapacity(count)
         for _ in 0..<count {
@@ -577,8 +634,14 @@ public enum SealProofCodec {
         }
     }
 
-    static func decodeRingArray(from reader: inout BinaryReader) throws -> [RingElement] {
+    static func decodeRingArray(
+        from reader: inout BinaryReader,
+        maxCount: Int = Limits.ringElements
+    ) throws -> [RingElement] {
         let count = Int(try reader.readUInt32())
+        guard count <= maxCount else {
+            throw BinaryReader.Error.invalidData
+        }
         var values = [RingElement]()
         values.reserveCapacity(count)
         for _ in 0..<count {
@@ -614,12 +677,15 @@ enum ResumePayloadCodec {
         guard version == ResumePayload.currentVersion else {
             throw BinaryReader.Error.invalidData
         }
-        let accumulatorArtifact = try reader.readLengthPrefixedData()
+        let accumulatorArtifact = try reader.readLengthPrefixedData(maxCount: SealProofCodec.Limits.accumulatorArtifactBytes)
         let normBudgetSnapshot = try decodeNormBudgetSnapshot(from: &reader)
         guard let provenanceClass = WitnessClass(rawValue: try reader.readUInt8()) else {
             throw BinaryReader.Error.invalidData
         }
         let stageAuditCount = Int(try reader.readUInt32())
+        guard stageAuditCount <= SealProofCodec.Limits.resumeStageAuditRecords else {
+            throw BinaryReader.Error.invalidData
+        }
         var stageAudit = [FoldStageRecord]()
         stageAudit.reserveCapacity(stageAuditCount)
         for _ in 0..<stageAuditCount {

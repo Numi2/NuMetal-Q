@@ -58,16 +58,20 @@ final class TranscriptVectorTests: XCTestCase {
         let squeezed = transcript.squeezeChallenges(count: 4).map(\.v)
         let ext = transcript.squeezeExtChallenge()
         let blinding = transcript.squeezeBlinding(count: 16)
+        let operations: [TranscriptReference.Operation] = [
+            .label("fixture"),
+            .field(Fq(42)),
+            .ext(Fq2(a: Fq(7), b: Fq(9))),
+            .ring(AcceptanceSupport.randomRing(seed: 77, index: 3)),
+        ]
+        var reference = TranscriptReference(
+            domain: "NuMetalQ.Tests.TranscriptVectors",
+            operations: operations
+        )
 
-        XCTAssertEqual(
-            squeezed,
-            [6044888351207392749, 6597049127249598833, 2039659454611996154, 4798920443624416340]
-        )
-        XCTAssertEqual(ext, Fq2(a: Fq(3391207842536485456), b: Fq(15374075142347075555)))
-        XCTAssertEqual(
-            blinding,
-            [40, 92, 33, 233, 213, 206, 61, 102, 145, 30, 143, 85, 236, 199, 196, 220]
-        )
+        XCTAssertEqual(squeezed, reference.squeezeChallenges(count: 4).map(\.v))
+        XCTAssertEqual(ext, reference.squeezeExtChallenge())
+        XCTAssertEqual(blinding, reference.squeezeBlinding(count: 16))
     }
 
     func testTypedChallengeSamplerVectorsAreDeterministic() {
@@ -79,22 +83,133 @@ final class TranscriptVectorTests: XCTestCase {
         let samplerExt = NuSampler.challengeExt(transcript: &transcript)
         let samplerFields = NuSampler.challengeFields(count: 3, transcript: &transcript).map(\.v)
         let samplerRing = NuSampler.challengeRingFromC(transcript: &transcript).coeffs.map(\.v)
-
-        XCTAssertEqual(samplerField, 15446093897906189397)
-        XCTAssertEqual(samplerExt, Fq2(a: Fq(17981690620747196212), b: Fq(16026010498911519955)))
-        XCTAssertEqual(
-            samplerFields,
-            [11619197948624726363, 14592031892912268078, 5845020736507791066]
-        )
-        XCTAssertEqual(
-            samplerRing,
-            [
-                2, 18446744069414584288, 2, 0, 0, 0, 18446744069414584288, 18446744069414584288,
-                0, 2, 2, 0, 2, 18446744069414584288, 0, 18446744069414584288,
-                1, 0, 2, 1, 1, 2, 2, 0, 18446744069414584288, 18446744069414584288, 18446744069414584288, 2, 0, 2, 2, 0,
-                1, 2, 1, 0, 18446744069414584288, 18446744069414584288, 18446744069414584288, 1, 1, 1, 0, 1, 0, 18446744069414584288, 0, 1,
-                0, 18446744069414584288, 0, 1, 0, 18446744069414584288, 1, 2, 0, 2, 1, 0, 18446744069414584288, 1, 18446744069414584288, 1
+        var reference = TranscriptReference(
+            domain: "NuMetalQ.Tests.SamplerVectors",
+            operations: [
+                .label("fixture"),
+                .field(Fq(99)),
             ]
         )
+
+        XCTAssertEqual(samplerField, reference.squeezeChallenge().v)
+        XCTAssertEqual(samplerExt, reference.squeezeExtChallenge())
+        XCTAssertEqual(samplerFields, reference.squeezeChallenges(count: 3).map(\.v))
+        XCTAssertEqual(samplerRing, reference.challengeRingFromC().coeffs.map(\.v))
+    }
+}
+
+private struct TranscriptReference {
+    enum Operation {
+        case field(Fq)
+        case ext(Fq2)
+        case ring(RingElement)
+        case label(String)
+    }
+
+    private static let functionName = Data("NuMeQ.TranscriptField".utf8)
+    private static let squeezeBlockBytes = 32
+
+    private let domain: String
+    private let buffer: Data
+    private var squeezeCounter: UInt64 = 0
+
+    init(domain: String, operations: [Operation]) {
+        self.domain = domain
+        var buffer = Data()
+        Self.appendFrame(tag: 0x00, payload: Data(domain.utf8), into: &buffer)
+        for operation in operations {
+            switch operation {
+            case .field(let value):
+                Self.appendFrame(tag: 0x01, payload: Data(value.toBytes()), into: &buffer)
+            case .ext(let value):
+                Self.appendFrame(tag: 0x02, payload: Data(value.toBytes()), into: &buffer)
+            case .ring(let value):
+                Self.appendFrame(tag: 0x03, payload: Data(value.toBytes()), into: &buffer)
+            case .label(let value):
+                Self.appendFrame(tag: 0x04, payload: Data(value.utf8), into: &buffer)
+            }
+        }
+        self.buffer = buffer
+    }
+
+    mutating func squeezeChallenge() -> Fq {
+        let bytes = squeezeBytes(label: "challenge.field", count: 16)
+        let lo = LittleEndianCodec.uint64(from: bytes.prefix(8))
+        let hi = LittleEndianCodec.uint64(from: bytes.suffix(8))
+        return Fq.reduceFull(hi: hi, lo: lo)
+    }
+
+    mutating func squeezeExtChallenge() -> Fq2 {
+        Fq2(a: squeezeChallenge(), b: squeezeChallenge())
+    }
+
+    mutating func squeezeChallenges(count: Int) -> [Fq] {
+        (0..<count).map { _ in squeezeChallenge() }
+    }
+
+    mutating func squeezeBlinding(count: Int) -> [UInt8] {
+        squeezeBytes(label: "challenge.blinding", count: count)
+    }
+
+    mutating func challengeRingFromC() -> RingElement {
+        let challenges = squeezeChallenges(count: 2)
+        let bits0 = challenges[0].v
+        let bits1 = challenges[1].v
+        let coeffs = (0..<RingElement.degree).map { index -> Fq in
+            let pair: UInt64
+            if index < 32 {
+                pair = (bits0 >> (UInt64(index) * 2)) & 0x3
+            } else {
+                pair = (bits1 >> (UInt64(index - 32) * 2)) & 0x3
+            }
+            switch pair {
+            case 0:
+                return Fq(raw: Fq.modulus &- 1)
+            case 1:
+                return .zero
+            case 2:
+                return .one
+            case 3:
+                return Fq(raw: 2)
+            default:
+                return .zero
+            }
+        }
+        return RingElement(coeffs: coeffs)
+    }
+
+    private mutating func squeezeBytes(label: String, count: Int) -> [UInt8] {
+        var output = [UInt8]()
+        output.reserveCapacity(count)
+        var blockIndex: UInt32 = 0
+        while output.count < count {
+            let block = squeezeBlock(label: label, blockIndex: blockIndex)
+            let take = min(block.count, count - output.count)
+            output.append(contentsOf: block.prefix(take))
+            blockIndex &+= 1
+        }
+        squeezeCounter &+= 1
+        return output
+    }
+
+    private func squeezeBlock(label: String, blockIndex: UInt32) -> [UInt8] {
+        var writer = BinaryWriter()
+        writer.append(squeezeCounter)
+        writer.append(blockIndex)
+        writer.appendLengthPrefixed(Data(label.utf8))
+        writer.appendLengthPrefixed(buffer)
+        return NuSealCShake256.cshake256(
+            data: writer.data,
+            functionName: Self.functionName,
+            customization: Data(domain.utf8),
+            count: Self.squeezeBlockBytes
+        )
+    }
+
+    private static func appendFrame(tag: UInt8, payload: Data, into buffer: inout Data) {
+        buffer.append(tag)
+        var count = UInt32(clamping: payload.count).littleEndian
+        buffer.append(contentsOf: withUnsafeBytes(of: &count) { Data($0) })
+        buffer.append(payload)
     }
 }

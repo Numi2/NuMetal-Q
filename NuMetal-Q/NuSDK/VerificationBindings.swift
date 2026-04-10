@@ -39,3 +39,29 @@ package func publicStatementMatchesHeader(
     }
     return decoded == publicInputs
 }
+
+package func envelopeMatchesNamespace(
+    envelope: ProofEnvelope,
+    expectedAppID: String,
+    expectedTeamID: String
+) -> VerificationFailure? {
+    guard envelope.appID == expectedAppID else {
+        return .appIDMismatch
+    }
+    guard envelope.teamID == expectedTeamID else {
+        return .teamIDMismatch
+    }
+    return nil
+}
+
+package func keyedEnvelopeVerifier(
+    expectedSignerKeyID: Data,
+    verifySignature: @escaping PQVerifyClosure
+) -> PQKeyedVerifyClosure {
+    { message, signature, signerKeyID in
+        guard signerKeyID == expectedSignerKeyID else {
+            return false
+        }
+        return try verifySignature(message, signature)
+    }
+}

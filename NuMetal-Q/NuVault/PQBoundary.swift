@@ -44,6 +44,7 @@ public enum AttestationPurpose: String, Sendable, Codable {
 public struct AttestationContext: Sendable {
     public let purpose: AttestationPurpose
     public let appID: String?
+    public let teamID: String?
     public let localDeviceID: UUID?
     public let remoteDeviceID: UUID?
     public let sessionID: UUID?
@@ -56,6 +57,7 @@ public struct AttestationContext: Sendable {
     public init(
         purpose: AttestationPurpose,
         appID: String? = nil,
+        teamID: String? = nil,
         localDeviceID: UUID? = nil,
         remoteDeviceID: UUID? = nil,
         sessionID: UUID? = nil,
@@ -67,6 +69,7 @@ public struct AttestationContext: Sendable {
     ) {
         self.purpose = purpose
         self.appID = appID
+        self.teamID = teamID
         self.localDeviceID = localDeviceID
         self.remoteDeviceID = remoteDeviceID
         self.sessionID = sessionID

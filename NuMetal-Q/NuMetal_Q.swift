@@ -7,7 +7,7 @@
 //
 // Modules:
 //   NuField   — Almost Goldilocks64 field arithmetic (Fq, Fq², Rq, rotation matrices,
-//               NuDigest, NuTranscriptField/Poseidon2, NuSampler, NuProfile, NuParams)
+//               NuDigest, NuTranscriptField/cSHAKE256, NuSampler, NuProfile, NuParams)
 //   NuIR      — CCS intermediate representation, witness lanes, shapes, Header/Step
 //   NuFold    — SuperNeo folding engine (PiCCS, PiRLC, PiDEC, FoldState)
 //   NuSeal    — Terminal decider compilation and export verification
@@ -23,7 +23,7 @@
 //   3. PiDEC  — norm reduction: decompose B = b^k → b
 //
 // Transcript split:
-//   NuTranscriptField — Poseidon2 algebraic sponge for proof semantics only
+//   NuTranscriptField — cSHAKE256-backed field transcript for proof semantics only
 //   NuTranscriptSeal  — cSHAKE256 byte transcript for seal proofs only
 //   NuDigest          — CryptoKit SHA-256 for envelopes, shape packs, and metadata
 //

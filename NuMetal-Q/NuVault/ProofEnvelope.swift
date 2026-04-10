@@ -9,6 +9,16 @@ public enum PrivacyMode: UInt8, Sendable, Codable {
 public struct ProofEnvelope: Sendable {
     public static let currentVersion: UInt16 = 4
 
+    private static let digestByteCount = 32
+    private static let maxAppIDBytes = 512
+    private static let maxTeamIDBytes = 512
+    private static let maxSealBackendIDBytes = 128
+    private static let maxPublicHeaderBytes = 64 * 1024
+    private static let maxProofBytes = 16 * 1024 * 1024
+    private static let maxSignerKeyIDBytes = 4 * 1024
+    private static let maxSignatureBytes = 64 * 1024
+    private static let maxAttestationBytes = 1 * 1024 * 1024
+
     public let version: UInt16
     public let profileID: ProfileID
     public let appID: String
@@ -48,6 +58,9 @@ public struct ProofEnvelope: Sendable {
         guard privacyMode == .fullZK else {
             throw ProofEnvelopeValidationError.unsupportedPrivacyMode(privacyMode)
         }
+        guard appID.isEmpty == false else {
+            throw ProofEnvelopeValidationError.missingAppID
+        }
         guard sealBackendID == NuSealConstants.productionBackendID else {
             throw ProofEnvelopeValidationError.invalidSealBackend
         }
@@ -59,6 +72,12 @@ public struct ProofEnvelope: Sendable {
         }
         guard proofBytes.isEmpty == false else {
             throw ProofEnvelopeValidationError.missingProofBytes
+        }
+        guard publicHeaderDigest.count == Self.digestByteCount else {
+            throw ProofEnvelopeValidationError.invalidPublicHeaderDigest
+        }
+        guard sealParamDigest.count == Self.digestByteCount else {
+            throw ProofEnvelopeValidationError.invalidSealParamDigest
         }
         guard publicHeaderDigest == NuSecurityDigest.sha256(publicHeaderBytes) else {
             throw ProofEnvelopeValidationError.invalidPublicHeaderDigest
@@ -92,20 +111,20 @@ public struct ProofEnvelope: Sendable {
         var reader = BinaryReader(data)
         let version = try reader.readUInt16()
         let profileID = ProfileID(bytes: Array(try reader.readData(count: 32)))
-        let appID = try decodeString(from: &reader)
-        let teamID = try decodeString(from: &reader)
+        let appID = try decodeString(from: &reader, maxBytes: Self.maxAppIDBytes)
+        let teamID = try decodeString(from: &reader, maxBytes: Self.maxTeamIDBytes)
         let shapeDigest = ShapeDigest(bytes: Array(try reader.readData(count: 32)))
-        let publicHeaderDigest = try reader.readLengthPrefixedData()
-        let publicHeaderBytes = try reader.readLengthPrefixedData()
-        let sealBackendID = try decodeString(from: &reader)
-        let sealParamDigest = try reader.readLengthPrefixedData()
+        let publicHeaderDigest = try reader.readLengthPrefixedData(maxCount: Self.digestByteCount)
+        let publicHeaderBytes = try reader.readLengthPrefixedData(maxCount: Self.maxPublicHeaderBytes)
+        let sealBackendID = try decodeString(from: &reader, maxBytes: Self.maxSealBackendIDBytes)
+        let sealParamDigest = try reader.readLengthPrefixedData(maxCount: Self.digestByteCount)
         guard let privacyMode = PrivacyMode(rawValue: try reader.readUInt8()) else {
             throw BinaryReader.Error.invalidData
         }
-        let proofBytes = try reader.readLengthPrefixedData()
-        let signerKeyID = try reader.readLengthPrefixedData()
-        let signature = try reader.readLengthPrefixedData()
-        let attestationData = try reader.readLengthPrefixedData()
+        let proofBytes = try reader.readLengthPrefixedData(maxCount: Self.maxProofBytes)
+        let signerKeyID = try reader.readLengthPrefixedData(maxCount: Self.maxSignerKeyIDBytes)
+        let signature = try reader.readLengthPrefixedData(maxCount: Self.maxSignatureBytes)
+        let attestationData = try reader.readLengthPrefixedData(maxCount: Self.maxAttestationBytes)
         let timestamp = Date(timeIntervalSince1970: try reader.readDouble())
 
         guard reader.isAtEnd else {
@@ -161,8 +180,11 @@ public struct ProofEnvelope: Sendable {
         return attestation
     }
 
-    private static func decodeString(from reader: inout BinaryReader) throws -> String {
-        let data = try reader.readLengthPrefixedData()
+    private static func decodeString(
+        from reader: inout BinaryReader,
+        maxBytes: Int
+    ) throws -> String {
+        let data = try reader.readLengthPrefixedData(maxCount: maxBytes)
         guard let string = String(data: data, encoding: .utf8) else {
             throw BinaryReader.Error.invalidData
         }
@@ -173,11 +195,13 @@ public struct ProofEnvelope: Sendable {
 enum ProofEnvelopeValidationError: Error, Sendable {
     case unsupportedVersion(UInt16)
     case unsupportedPrivacyMode(PrivacyMode)
+    case missingAppID
     case invalidSealBackend
     case missingSignerKeyID
     case missingTeamID
     case missingProofBytes
     case invalidPublicHeaderDigest
+    case invalidSealParamDigest
     case invalidTimestamp
 }
 

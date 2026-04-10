@@ -127,7 +127,8 @@ enum NuMetalQBenchmarks {
                 let context = await engine.createContext(
                     compiledShape: fixture.compiledShape,
                     policy: .standard,
-                    appID: "NuMetalQ.Benchmarks",
+                    appID: benchmarkAppID,
+                    teamID: benchmarkTeamID,
                     attestationVerifier: attestationVerifier
                 )
                 let sessionKey = SymmetricKey(data: Data(repeating: 0xA5, count: 32))
@@ -153,7 +154,8 @@ enum NuMetalQBenchmarks {
                         let fuseContext = await engine.createContext(
                             compiledShape: fixture.compiledShape,
                             policy: .standard,
-                            appID: "NuMetalQ.Benchmarks",
+                            appID: benchmarkAppID,
+                            teamID: benchmarkTeamID,
                             attestationVerifier: attestationVerifier
                         )
                         let untimedFuseSeedOne = try await fuseContext.seed(
@@ -192,6 +194,8 @@ enum NuMetalQBenchmarks {
                         envelope: sealedExport.value.proofEnvelope,
                         compiledShape: fixture.compiledShape,
                         verifySignature: envelopeVerifier,
+                        expectedAppID: benchmarkAppID,
+                        expectedTeamID: benchmarkTeamID,
                         attestationVerifier: attestationVerifier,
                         requireAttestation: true,
                         executionMode: .cpuOnly,
@@ -255,6 +259,8 @@ enum NuMetalQBenchmarks {
                             envelope: sealedExport.value.proofEnvelope,
                             compiledShape: fixture.compiledShape,
                             verifySignature: envelopeVerifier,
+                            expectedAppID: benchmarkAppID,
+                            expectedTeamID: benchmarkTeamID,
                             attestationVerifier: attestationVerifier,
                             requireAttestation: true,
                             executionMode: .metalAssisted,
@@ -1859,6 +1865,8 @@ enum NuMetalQBenchmarks {
 
     private static let signerKey = SymmetricKey(data: Data(repeating: 0x5A, count: 32))
     private static let signerKeyID = Data("bench-signer".utf8)
+    private static let benchmarkAppID = "NuMetalQ.Benchmarks"
+    private static let benchmarkTeamID = "NuMetalQ.Benchmarks"
     private static let signer: PQSignClosure = { message in
         Data(HMAC<SHA256>.authenticationCode(for: message, using: signerKey))
     }
@@ -1875,7 +1883,8 @@ enum NuMetalQBenchmarks {
         guard attestation == Data("bench-attestation".utf8) else {
             return false
         }
-        return context.appID == "NuMetalQ.Benchmarks"
+        return context.appID == benchmarkAppID
+            && context.teamID == benchmarkTeamID
             && context.shapeDigest != nil
             && context.signerKeyID == signerKeyID
             && context.payloadDigest.isEmpty == false

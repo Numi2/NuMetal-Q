@@ -107,12 +107,6 @@ public struct NuProfile: Sendable, Hashable, Codable {
         if decompositionInterval < 1 {
             errors.append("decompositionInterval must be positive")
         }
-        if rawSecurityBits < 192 {
-            errors.append("raw security floor must be at least 192 bits")
-        }
-        if securityBits < 128 {
-            errors.append("composed security floor must be at least 128 bits")
-        }
         return ProfileValidation(isValid: errors.isEmpty, errors: errors)
     }
 }
@@ -414,7 +408,7 @@ public struct ProfileCertificate: Sendable, Codable {
         let quarticVerified = AG64FieldTower.isQuarticIrreducible(tower.quarticEta)
 
         let estimatorTranscript = SecurityEstimatorTranscript(
-            model: "deterministic searched profile",
+            model: "heuristic profile estimate (informational only)",
             rawSecurityBits: profile.rawSecurityBits,
             composedSecurityBits: profile.securityBits,
             challengeEntropyBits: 2 * profile.ringDegree,
@@ -423,8 +417,8 @@ public struct ProfileCertificate: Sendable, Codable {
             normBound: profile.normBound,
             lossTerms: searchTranscript.candidates[searchTranscript.selectedIndex].lossTerms,
             notes: [
-                "Raw floor must clear 192 bits before composition losses",
-                "Composed floor must clear 128 bits after certified losses",
+                "Estimated security bits are informational heuristics rather than certified floors",
+                "Production claims require external cryptanalysis instead of in-repo threshold checks",
                 "PiDEC cadence is fixed by profile.decompositionInterval"
             ]
         )
@@ -469,13 +463,13 @@ public struct ProfileCertificate: Sendable, Codable {
             "batching and depth composition",
         ]
         let releasePolicy = SecurityReleasePolicy(
-            minimumRawSecurityBits: 192,
-            minimumComposedSecurityBits: 128,
+            minimumRawSecurityBits: 0,
+            minimumComposedSecurityBits: 0,
             checkedAttackModels: checkedAttackModels,
             enforcedLossTerms: searchTranscript.candidates[searchTranscript.selectedIndex].lossTerms,
             notes: [
-                "Profiles ship only when the raw floor clears 192 bits before composition losses",
-                "Profiles ship only when the composed floor clears 128 bits after certified losses",
+                "Estimated security bits are informational only and do not constitute a release gate",
+                "Production parameter claims require external cryptanalysis and published review",
                 "PiDEC cadence and norm ceilings are certified invariants, never runtime heuristics",
                 "Abstract statements remain in AG64 while convolution-heavy kernels scalar-extend through Fq4 and project back to Fq",
             ]
@@ -483,14 +477,14 @@ public struct ProfileCertificate: Sendable, Codable {
 
         let summary = """
         NuMeQ One-Stack Profile Certificate
-        Architecture: SuperNeo(Fq/Fq2) + HachiDecider(Fq4) + AG64(Rq,d=64) + certified release gate
+        Architecture: SuperNeo(Fq/Fq2) + HachiDecider(Fq4) + AG64(Rq,d=64) + informational estimator
         Profile: \(profile.name) v\(profile.version)
         q = \(profile.modulus)
         Phi(X) = X^\(profile.ringDegree) + 1
         K2 = Fq[u]/(u^2 - \(profile.extensionNonsquare))
         K4 = Fq2[v]/(v^2 - (\(profile.quarticEta[0]) + \(profile.quarticEta[1])u))
-        raw floor = \(profile.rawSecurityBits)
-        composed floor = \(profile.securityBits)
+        estimated raw bits = \(profile.rawSecurityBits)
+        estimated composed bits = \(profile.securityBits)
         PiDEC interval = \(profile.decompositionInterval)
         """
 
@@ -629,8 +623,8 @@ public struct ProfileCertificate: Sendable, Codable {
                 "provenance_digest",
             ]
             && hachiDecider.exportedEnvelopeLayer == "application-signing-and-transport"
-            && releasePolicy.minimumRawSecurityBits == 192
-            && releasePolicy.minimumComposedSecurityBits == 128
+            && releasePolicy.minimumRawSecurityBits == 0
+            && releasePolicy.minimumComposedSecurityBits == 0
             && releasePolicy.checkedAttackModels == [
                 "baseline lattice estimator workbook",
                 "module-structure correction",

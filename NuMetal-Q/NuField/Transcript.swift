@@ -100,7 +100,7 @@ public struct NuSealFieldTranscriptAdapter: Sendable, NuFieldTranscript {
 // shape digests, caches, app metadata, and Merkle trees.
 // This belongs OUTSIDE the proof boundary.
 //
-// The proof core uses NuTranscriptField (Poseidon2 algebraic sponge) instead.
+// The proof core uses NuTranscriptField (cSHAKE256-backed field transcript) instead.
 
 /// Byte-oriented hash transcript for envelopes, shape digests, and metadata.
 ///
@@ -309,204 +309,106 @@ public struct NuSealCShake256: Sendable, NuByteDigestTranscript {
     }
 }
 
-// MARK: - NuTranscriptField: Algebraic Sponge Transcript
-// Poseidon2 permutation over Fq for all proof-internal transcript operations.
+// MARK: - NuTranscriptField: cSHAKE256-Backed Field Transcript
+// cSHAKE256 transcript for all proof-internal transcript operations.
 // This is the ONLY transcript used inside the SuperNeo protocol stages.
-// Keeps the recursive verifier cheap: no non-native hash arithmetic.
 
-/// Field-native algebraic sponge transcript for proof protocol semantics.
+/// Field-native transcript for proof protocol semantics.
 ///
-/// Uses a Poseidon2 permutation over Fq with rate=8, capacity=4, width=12.
-/// All challenge generation for PiCCS, PiRLC, PiDEC, and the fold engine
-/// goes through this transcript. This keeps the recursive verifier arithmetic
-/// entirely within Fq, avoiding the cost of simulating SHA-256 in-circuit.
+/// Frames each absorbed value with an explicit type tag and derives challenges
+/// from cSHAKE256 output reduced into Fq. This avoids relying on a custom
+/// permutation for Fiat-Shamir while keeping the transcript API field-oriented.
 public struct NuTranscriptField: Sendable {
-    /// Poseidon2 state width (rate + capacity).
-    public static let width = 12
-    /// Rate portion of the sponge (number of absorbable elements per permutation).
-    public static let rate = 8
-    /// Capacity portion (security margin).
-    public static let capacity = 4
+    private static let fieldBytes = 16
+    private static let squeezeBlockBytes = 32
+    private static let functionName = Data("NuMeQ.TranscriptField".utf8)
 
-    private var state: [Fq]
-    private var absorbIndex: Int = 0
-    private var squeezed: Int = 0
-    private var mode: SpongeMode = .absorbing
-
-    private enum SpongeMode {
-        case absorbing
-        case squeezing
-    }
+    private let domain: String
+    private var buffer: Data
+    private var squeezeCounter: UInt64 = 0
 
     public init(domain: String) {
-        state = [Fq](repeating: .zero, count: Self.width)
-        // Domain separation: encode the label into the capacity region
-        let tag = Array(domain.utf8)
-        for (i, byte) in tag.prefix(Self.capacity * 8).enumerated() {
-            let idx = Self.rate + (i / 8)
-            let shift = UInt64(i % 8) * 8
-            state[idx] = Fq(state[idx].v ^ (UInt64(byte) << shift))
-        }
-        permute()
+        self.domain = domain
+        self.buffer = Data()
+        appendFrame(tag: 0x00, payload: Data(domain.utf8))
     }
 
     // MARK: - Absorb
 
     public mutating func absorb(field: Fq) {
-        if mode == .squeezing {
-            permute()
-            absorbIndex = 0
-            mode = .absorbing
-        }
-        state[absorbIndex] += field
-        absorbIndex += 1
-        if absorbIndex >= Self.rate {
-            permute()
-            absorbIndex = 0
-        }
+        appendFrame(tag: 0x01, payload: Data(field.toBytes()))
     }
 
     public mutating func absorb(ext: Fq2) {
-        absorb(field: ext.a)
-        absorb(field: ext.b)
+        appendFrame(tag: 0x02, payload: Data(ext.toBytes()))
     }
 
     public mutating func absorb(ring: RingElement) {
-        for coeff in ring.coeffs {
-            absorb(field: coeff)
-        }
+        appendFrame(tag: 0x03, payload: Data(ring.toBytes()))
     }
 
     public mutating func absorbLabel(_ label: String) {
-        let bytes = Array(label.utf8)
-        absorb(field: Fq(UInt64(bytes.count)))
-        for chunk in stride(from: 0, to: bytes.count, by: 8) {
-            var packed: UInt64 = 0
-            for i in chunk..<min(chunk + 8, bytes.count) {
-                packed |= UInt64(bytes[i]) << (UInt64(i - chunk) * 8)
-            }
-            absorb(field: Fq(packed % Fq.modulus))
-        }
+        appendFrame(tag: 0x04, payload: Data(label.utf8))
     }
 
     // MARK: - Squeeze
 
-    /// Squeeze a single Fq challenge from the sponge.
     public mutating func squeezeChallenge() -> Fq {
-        if mode == .absorbing {
-            permute()
-            mode = .squeezing
-            squeezed = 0
-        }
-        if squeezed >= Self.rate {
-            permute()
-            squeezed = 0
-        }
-        let result = state[squeezed]
-        squeezed += 1
-        return result
+        let bytes = squeezeBytesInternal(label: "challenge.field", count: Self.fieldBytes)
+        let lo = LittleEndianCodec.uint64(from: bytes.prefix(8))
+        let hi = LittleEndianCodec.uint64(from: bytes.suffix(8))
+        return Fq.reduceFull(hi: hi, lo: lo)
     }
 
-    /// Squeeze an Fq2 challenge.
     public mutating func squeezeExtChallenge() -> Fq2 {
         let a = squeezeChallenge()
         let b = squeezeChallenge()
         return Fq2(a: a, b: b)
     }
 
-    /// Squeeze multiple Fq challenges.
     public mutating func squeezeChallenges(count: Int) -> [Fq] {
-        (0..<count).map { _ in squeezeChallenge() }
-    }
-
-    /// Squeeze bytes for blinding randomness (extracts from field elements).
-    public mutating func squeezeBlinding(count: Int) -> [UInt8] {
         precondition(count >= 0)
-        var out: [UInt8] = []
-        out.reserveCapacity(count)
-        while out.count < count {
-            let elem = squeezeChallenge()
-            let bytes = elem.toBytes()
-            let take = min(8, count - out.count)
-            out.append(contentsOf: bytes.prefix(take))
-        }
-        return out
+        return (0..<count).map { _ in squeezeChallenge() }
     }
 
-    // MARK: - Poseidon2 Permutation
-    // Poseidon2 with t=12 over Fq (Almost Goldilocks).
-    // Full rounds: 8 (4 head + 4 tail). Partial rounds: 22.
-    // S-box: x^5 (the smallest secure power for this field characteristic).
-
-    private static let fullRoundsHead = 4
-    private static let partialRounds = 22
-    private static let fullRoundsTail = 4
-
-    private mutating func permute() {
-        // --- Full rounds (head) ---
-        for r in 0..<Self.fullRoundsHead {
-            addRoundConstants(round: r)
-            sboxFull()
-            mdsExternal()
-        }
-        // --- Partial rounds ---
-        for r in 0..<Self.partialRounds {
-            addRoundConstants(round: Self.fullRoundsHead + r)
-            state[0] = sbox(state[0])
-            mdsDiagonal()
-        }
-        // --- Full rounds (tail) ---
-        for r in 0..<Self.fullRoundsTail {
-            addRoundConstants(round: Self.fullRoundsHead + Self.partialRounds + r)
-            sboxFull()
-            mdsExternal()
-        }
+    public mutating func squeezeBlinding(count: Int) -> [UInt8] {
+        squeezeBytesInternal(label: "challenge.blinding", count: count)
     }
 
-    private func sbox(_ x: Fq) -> Fq {
-        let x2 = x * x
-        let x4 = x2 * x2
-        return x4 * x
+    private mutating func appendFrame(tag: UInt8, payload: Data) {
+        buffer.append(tag)
+        var count = UInt32(clamping: payload.count).littleEndian
+        buffer.append(contentsOf: withUnsafeBytes(of: &count) { Data($0) })
+        buffer.append(payload)
     }
 
-    private mutating func sboxFull() {
-        for i in 0..<Self.width {
-            state[i] = sbox(state[i])
+    private mutating func squeezeBytesInternal(label: String, count: Int) -> [UInt8] {
+        precondition(count >= 0)
+        var output = [UInt8]()
+        output.reserveCapacity(count)
+        var blockIndex: UInt32 = 0
+        while output.count < count {
+            let block = squeezeBlock(label: label, blockIndex: blockIndex)
+            let take = min(block.count, count - output.count)
+            output.append(contentsOf: block.prefix(take))
+            blockIndex &+= 1
         }
+        squeezeCounter &+= 1
+        return output
     }
 
-    /// External MDS: Cauchy-style circulant for full rounds.
-    private mutating func mdsExternal() {
-        var sum = Fq.zero
-        for i in 0..<Self.width {
-            sum += state[i]
-        }
-        for i in 0..<Self.width {
-            state[i] = state[i] * Fq(raw: UInt64(i &+ 2)) + sum
-        }
-    }
-
-    /// Diagonal MDS: efficient for partial rounds.
-    private mutating func mdsDiagonal() {
-        var sum = Fq.zero
-        for i in 0..<Self.width {
-            sum += state[i]
-        }
-        state[0] = state[0] + sum
-        for i in 1..<Self.width {
-            state[i] = state[i] * Fq(raw: UInt64(i &+ 1)) + sum
-        }
-    }
-
-    /// Add deterministic round constants derived from the Poseidon2 grain LFSR.
-    /// For reproducibility, constants are derived from a fixed seed.
-    private mutating func addRoundConstants(round: Int) {
-        let seed: UInt64 = 0x4E754D6551_5032  // Canonical transcript seed
-        for i in 0..<Self.width {
-            let idx = UInt64(round * Self.width + i)
-            let (hi, lo) = (seed &+ idx &* 0x9E3779B97F4A7C15).multipliedFullWidth(by: 0x517CC1B727220A95)
-            state[i] += Fq.reduceFull(hi: hi, lo: lo)
-        }
+    private func squeezeBlock(label: String, blockIndex: UInt32) -> [UInt8] {
+        var writer = BinaryWriter()
+        writer.append(squeezeCounter)
+        writer.append(blockIndex)
+        writer.appendLengthPrefixed(Data(label.utf8))
+        writer.appendLengthPrefixed(buffer)
+        return NuSealCShake256.cshake256(
+            data: writer.data,
+            functionName: Self.functionName,
+            customization: Data(domain.utf8),
+            count: Self.squeezeBlockBytes
+        )
     }
 }
 

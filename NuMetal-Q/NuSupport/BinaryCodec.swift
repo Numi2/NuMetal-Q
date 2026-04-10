@@ -63,6 +63,8 @@ internal struct BinaryReader {
         case invalidData
     }
 
+    static let defaultMaxLengthPrefixedCount = 64 * 1024 * 1024
+
     private let data: Data
     private var offset: Int = 0
 
@@ -104,13 +106,18 @@ internal struct BinaryReader {
         return Data(out)
     }
 
-    mutating func readLengthPrefixedData() throws -> Data {
+    mutating func readLengthPrefixedData(
+        maxCount: Int = Self.defaultMaxLengthPrefixedCount
+    ) throws -> Data {
         let count = try Int(readUInt32())
+        guard count <= maxCount else { throw Error.invalidData }
         return try readData(count: count)
     }
 
-    mutating func readLengthPrefixedBytes() throws -> [UInt8] {
-        Array(try readLengthPrefixedData())
+    mutating func readLengthPrefixedBytes(
+        maxCount: Int = Self.defaultMaxLengthPrefixedCount
+    ) throws -> [UInt8] {
+        Array(try readLengthPrefixedData(maxCount: maxCount))
     }
 
     private mutating func readFixedWidthInteger<T: FixedWidthInteger>() throws -> T {

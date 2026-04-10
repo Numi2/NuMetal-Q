@@ -77,8 +77,12 @@ final class CryptoHardeningTests: XCTestCase {
         XCTAssertEqual(digest, Array(SHA256.hash(data: artifact)))
         XCTAssertTrue(certificate.isValid)
         XCTAssertEqual(certificate.hachiDecider.relationID, "D_Nu")
-        XCTAssertEqual(certificate.releasePolicy.minimumRawSecurityBits, 192)
-        XCTAssertEqual(certificate.releasePolicy.minimumComposedSecurityBits, 128)
+        XCTAssertEqual(certificate.releasePolicy.minimumRawSecurityBits, 0)
+        XCTAssertEqual(certificate.releasePolicy.minimumComposedSecurityBits, 0)
+        XCTAssertEqual(
+            certificate.estimatorTranscript.model,
+            "heuristic profile estimate (informational only)"
+        )
     }
 
     func testFq4SubfieldProjectionHelpersRejectNonBaseElements() {

@@ -139,6 +139,7 @@ enum AcceptanceSupport {
             compiledShape: try makeCompiledShape(name: name),
             policy: .standard,
             appID: "NuMetalQ.Tests",
+            teamID: "NuMetalQ",
             attestationVerifier: attestationVerifier
         )
     }
@@ -280,6 +281,7 @@ enum AcceptanceSupport {
             context: AttestationContext(
                 purpose: .envelopeVerification,
                 appID: envelope.appID,
+                teamID: envelope.teamID,
                 shapeDigest: envelope.shapeDigest,
                 signerKeyID: envelope.signerKeyID,
                 timestamp: envelope.timestamp,
@@ -398,6 +400,7 @@ enum AcceptanceSupport {
 private struct TestAttestation: Codable, Equatable {
     let purpose: String
     let appID: String?
+    let teamID: String?
     let localDeviceID: UUID?
     let remoteDeviceID: UUID?
     let sessionID: UUID?
@@ -410,6 +413,7 @@ private struct TestAttestation: Codable, Equatable {
     init(context: AttestationContext) {
         self.purpose = context.purpose.rawValue
         self.appID = context.appID
+        self.teamID = context.teamID
         self.localDeviceID = context.localDeviceID
         self.remoteDeviceID = context.remoteDeviceID
         self.sessionID = context.sessionID

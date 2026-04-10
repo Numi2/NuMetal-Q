@@ -453,16 +453,18 @@ public actor ProofContext {
     public func resume(
         envelope: ProofEnvelope,
         resumeArtifact: ResumeArtifact,
-        verifySignature: PQVerifyClosure,
+        verifySignature: @escaping PQVerifyClosure,
+        expectedSignerKeyID: Data,
         requireAttestation: Bool = false,
         sessionKey: SymmetricKey
     ) async throws -> ProofHandle {
         try await resume(
             envelope: envelope,
             resumeArtifact: resumeArtifact,
-            verifySignature: { message, signature, _ in
-                try verifySignature(message, signature)
-            },
+            verifySignature: keyedEnvelopeVerifier(
+                expectedSignerKeyID: expectedSignerKeyID,
+                verifySignature: verifySignature
+            ),
             requireAttestation: requireAttestation,
             sessionKey: sessionKey
         )
@@ -544,6 +546,13 @@ public actor ProofContext {
         guard envelope.sealParamDigest == Data(NuParams.derive(from: profile).seal.parameterDigest) else {
             return VerificationResult(isValid: false, reason: .proofInvalid)
         }
+        if let namespaceFailure = envelopeMatchesNamespace(
+            envelope: envelope,
+            expectedAppID: appID,
+            expectedTeamID: teamID
+        ) {
+            return VerificationResult(isValid: false, reason: namespaceFailure)
+        }
 
         switch validateEnvelopeAttestation(
             envelope,
@@ -586,14 +595,16 @@ public actor ProofContext {
 
     public func verify(
         envelope: ProofEnvelope,
-        verifySignature: PQVerifyClosure,
+        verifySignature: @escaping PQVerifyClosure,
+        expectedSignerKeyID: Data,
         requireAttestation: Bool = false
     ) async throws -> VerificationResult {
         try await verify(
             envelope: envelope,
-            verifySignature: { message, signature, _ in
-                try verifySignature(message, signature)
-            },
+            verifySignature: keyedEnvelopeVerifier(
+                expectedSignerKeyID: expectedSignerKeyID,
+                verifySignature: verifySignature
+            ),
             requireAttestation: requireAttestation
         )
     }
@@ -727,6 +738,7 @@ public actor ProofContext {
         let context = AttestationContext(
             purpose: purpose,
             appID: envelope.appID,
+            teamID: envelope.teamID,
             shapeDigest: envelope.shapeDigest,
             signerKeyID: envelope.signerKeyID,
             timestamp: envelope.timestamp,
@@ -844,6 +856,8 @@ public enum VerificationFailure: Sendable, Equatable {
     case signerIdentityMissing
     case unsupportedEnvelopeVersion
     case invalidTimestamp
+    case appIDMismatch
+    case teamIDMismatch
     case shapeMismatch
     case profileMismatch
     case backendMismatch
@@ -859,10 +873,13 @@ func verificationFailure(for error: ProofEnvelopeValidationError) -> Verificatio
         return .unsupportedEnvelopeVersion
     case .missingSignerKeyID:
         return .signerIdentityMissing
+    case .missingAppID:
+        return .proofInvalid
     case .invalidTimestamp:
         return .invalidTimestamp
     case .unsupportedPrivacyMode,
             .invalidSealBackend,
+            .invalidSealParamDigest,
             .missingTeamID,
             .invalidPublicHeaderDigest,
             .missingProofBytes:

@@ -424,6 +424,7 @@ public actor SyncChannel {
         let context = AttestationContext(
             purpose: purpose,
             appID: envelope.appID,
+            teamID: envelope.teamID,
             localDeviceID: localDeviceID,
             remoteDeviceID: remoteDeviceID,
             shapeDigest: envelope.shapeDigest,
