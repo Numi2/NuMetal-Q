@@ -7,7 +7,7 @@ This document collects the mathematical content implemented across the repo into
 NuMeQ's current production profile is the canonical profile selected by `NuProfile.canonical`:
 
 - Profile name: `AG64-SNQ-OneStack-A` v3
-- Base field modulus:
+- Base field modulus: 
 
   `q = 2^64 - 2^32 - 31 = 0xFFFF_FFFE_FFFF_FFE1`
 
