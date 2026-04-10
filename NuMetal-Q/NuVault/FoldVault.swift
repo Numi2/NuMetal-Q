@@ -52,6 +52,7 @@ public actor FoldVault {
         try activateMasterKey(derived)
     }
 
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     public func unlock(
         wrappedMasterKey: Data,
@@ -71,6 +72,7 @@ public actor FoldVault {
         let unwrapped = try ApplePostQuantum.unwrapSessionKey(wrapped, using: privateKey)
         try activateMasterKey(unwrapped)
     }
+#endif
 
     /// Lock the vault: clear all in-memory state.
     public func lock() {

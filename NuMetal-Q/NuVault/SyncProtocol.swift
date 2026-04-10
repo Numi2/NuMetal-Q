@@ -150,6 +150,7 @@ public actor SyncChannel {
     /// The returned `SyncMessage` stores the HPKE ciphertext in `ciphertext`
     /// and the sender's encapsulated key in `encapsulatedKey`. The legacy
     /// `nonce` and `tag` fields remain empty because HPKE owns the AEAD state.
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     public func sealUsingXWingHPKE(
         envelope: ProofEnvelope,
@@ -212,6 +213,7 @@ public actor SyncChannel {
             timestamp: unsigned.timestamp
         )
     }
+#endif
 
     /// Decrypt a sync message from a peer.
     public func open(message: SyncMessage, verifySignature: PQVerifyClosure) throws -> Data {
@@ -243,6 +245,7 @@ public actor SyncChannel {
     }
 
     /// Decrypt an HPKE/X-Wing sync message from a peer.
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     public func openUsingXWingHPKE(
         message: SyncMessage,
@@ -279,6 +282,7 @@ public actor SyncChannel {
         try recordOpened(message.messageID, now: now)
         return opened
     }
+#endif
 
     /// Decrypt and deserialize a proof envelope from a peer, optionally enforcing attestation.
     public func openEnvelope(
@@ -302,6 +306,7 @@ public actor SyncChannel {
         return envelope
     }
 
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     public func openEnvelopeUsingXWingHPKE(
         message: SyncMessage,
@@ -328,6 +333,7 @@ public actor SyncChannel {
         }
         return envelope
     }
+#endif
 
     private static func hpkeAssociatedData(
         messageID: UUID,

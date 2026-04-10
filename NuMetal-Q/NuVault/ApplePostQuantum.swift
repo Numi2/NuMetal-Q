@@ -113,6 +113,7 @@ public enum ApplePostQuantum {
     }
 }
 
+#if NUMETALQ_APPLE_PQ
 @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
 public extension ApplePostQuantum {
     static func makeMLDSA87Identity() throws -> PQSigningIdentity {
@@ -213,3 +214,4 @@ public extension ApplePostQuantum {
         return try privateKey.decapsulate(wrappedKey.encapsulatedKey)
     }
 }
+#endif

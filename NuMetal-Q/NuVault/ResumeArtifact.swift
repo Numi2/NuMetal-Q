@@ -105,6 +105,7 @@ public struct ResumeArtifact: Sendable, Equatable {
         return try ResumePayloadCodec.deserialize(payload)
     }
 
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     public func unwrapArtifactKey(
         using privateKey: MLKEM1024.PrivateKey
@@ -126,6 +127,7 @@ public struct ResumeArtifact: Sendable, Equatable {
         let wrapped = try WrappedArtifactKey.deserialize(wrappedArtifactKeys)
         return try ApplePostQuantum.unwrapSessionKey(wrapped, using: privateKey)
     }
+#endif
 }
 
 enum ResumeArtifactValidationError: Error, Sendable, Equatable {
@@ -162,6 +164,7 @@ enum ResumeArtifactBuilder {
         )
     }
 
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     static func build(
         payload: ResumePayload,
@@ -176,6 +179,7 @@ enum ResumeArtifactBuilder {
             wrappedArtifactKeys: try wrapped.wrappedKey.serialize()
         )
     }
+#endif
 
     static func aad(
         proof: PublicSealProof,

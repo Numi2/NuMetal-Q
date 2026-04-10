@@ -3,6 +3,7 @@ import CryptoKit
 import XCTest
 @testable import NuMetal_Q
 
+#if NUMETALQ_APPLE_PQ
 final class ApplePQIntegrationTests: XCTestCase {
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     func testMLDSA87IdentitySignsAndVerifies() throws {
@@ -307,6 +308,7 @@ final class ApplePQIntegrationTests: XCTestCase {
     }
 
 }
+#endif
 
 private func makeVaultTestState(shapeByte: UInt8) -> FoldState {
     FoldState(

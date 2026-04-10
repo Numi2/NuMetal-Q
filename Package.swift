@@ -1,5 +1,11 @@
 // swift-tools-version: 6.0
+import Foundation
 import PackageDescription
+
+let applePQEnabled = ProcessInfo.processInfo.environment["NUMETALQ_ENABLE_APPLE_PQ"] == "1"
+let applePQSwiftSettings: [SwiftSetting] = applePQEnabled ? [
+    .define("NUMETALQ_APPLE_PQ"),
+] : []
 
 let package = Package(
     name: "NuMetal-Q",
@@ -38,22 +44,26 @@ let package = Package(
             resources: [
                 .copy("NuMetal/Compiled"),
                 .copy("NuMetal/Shaders"),
-            ]
+            ],
+            swiftSettings: applePQSwiftSettings
         ),
         .executableTarget(
             name: "NuMetalQAcceptanceDemo",
             dependencies: ["NuMetal_Q"],
-            path: "Examples/NuMetalQAcceptanceDemo"
+            path: "Examples/NuMetalQAcceptanceDemo",
+            swiftSettings: applePQSwiftSettings
         ),
         .executableTarget(
             name: "NuMetalQBenchmarks",
             dependencies: ["NuMetal_Q"],
-            path: "Examples/NuMetalQBenchmarks"
+            path: "Examples/NuMetalQBenchmarks",
+            swiftSettings: applePQSwiftSettings
         ),
         .testTarget(
             name: "NuMetal_QTests",
             dependencies: ["NuMetal_Q"],
-            path: "Tests/NuMetal_QTests"
+            path: "Tests/NuMetal_QTests",
+            swiftSettings: applePQSwiftSettings
         ),
     ]
 )

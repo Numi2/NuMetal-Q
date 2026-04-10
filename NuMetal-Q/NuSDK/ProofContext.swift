@@ -251,6 +251,7 @@ public actor ProofContext {
 
     /// Compile the Hachi terminal decider for the final accumulator and wrap
     /// the proof body key for an Apple ML-KEM recipient.
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     public func seal(
         _ handle: ProofHandle,
@@ -300,6 +301,7 @@ public actor ProofContext {
         activeStates.removeValue(forKey: handle.chainID)
         return SealedExport(proofEnvelope: envelope, resumeArtifact: resumeArtifact)
     }
+#endif
 
     /// Compress a delegatable proof into a succinct SealProof using a paired
     /// co-prover for Lightning PCS witness commitment/opening work.
@@ -364,6 +366,7 @@ public actor ProofContext {
     }
 
     /// Cluster seal path that wraps the proof body key for an Apple ML-KEM recipient.
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     public func sealUsingCluster(
         _ handle: ProofHandle,
@@ -419,6 +422,7 @@ public actor ProofContext {
         activeStates.removeValue(forKey: handle.chainID)
         return SealedExport(proofEnvelope: envelope, resumeArtifact: resumeArtifact)
     }
+#endif
 
     private func makeResumePayload(for state: FoldState) throws -> ResumePayload {
         guard state.kind == .recursiveAccumulator,
@@ -488,6 +492,7 @@ public actor ProofContext {
         )
     }
 
+#if NUMETALQ_APPLE_PQ
     @available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *)
     public func resume(
         envelope: ProofEnvelope,
@@ -521,5 +526,6 @@ public actor ProofContext {
             sessionKey: try resumeArtifact.unwrapArtifactKey(using: artifactPrivateKey)
         )
     }
+#endif
 
 }

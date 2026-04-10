@@ -706,6 +706,7 @@ private extension NuMetalQAcceptanceDemo {
     }
 
     static func makeSigningMaterial() throws -> DemoSigningMaterial {
+#if NUMETALQ_APPLE_PQ
         if #available(iOS 26.0, macOS 26.0, watchOS 26.0, tvOS 26.0, macCatalyst 26.0, visionOS 26.0, *) {
             let identity = try ApplePostQuantum.makeMLDSA87Identity()
             return DemoSigningMaterial(
@@ -715,6 +716,7 @@ private extension NuMetalQAcceptanceDemo {
                 verifyEnvelope: identity.verifyEnvelope
             )
         }
+#endif
 
         let key = SymmetricKey(data: Data(repeating: 0x42, count: 32))
         let sign: PQSignClosure = { message in
