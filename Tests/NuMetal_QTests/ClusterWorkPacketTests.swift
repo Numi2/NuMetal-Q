@@ -11,12 +11,12 @@ final class ClusterWorkPacketTests: XCTestCase {
 
     func testFoldWorkPacketExecutesThroughClusterExecutor() async throws {
         let engine = try await AcceptanceSupport.makeEngine()
-        let principal = await engine.startClusterAsPrincipal(
+        let principal = try await engine.startClusterAsPrincipal(
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
             attestationVerifier: nonEmptyAttestationVerifier
         )
-        let coProver = await engine.startClusterAsCoProver(
+        let coProver = try await engine.startClusterAsCoProver(
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
             attestationVerifier: nonEmptyAttestationVerifier
@@ -86,13 +86,13 @@ final class ClusterWorkPacketTests: XCTestCase {
     }
 
     func testDecomposeWorkPacketExecutesThroughClusterExecutor() async throws {
-        let principal = ClusterSession(
+        let principal = try ClusterSession(
             role: .principal,
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
             attestationVerifier: nonEmptyAttestationVerifier
         )
-        let coProver = ClusterSession(
+        let coProver = try ClusterSession(
             role: .coProver,
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
@@ -245,14 +245,138 @@ final class ClusterWorkPacketTests: XCTestCase {
         XCTAssertFalse(tampered.isValid(for: packet))
     }
 
+    func testClusterRejectsStaleFragmentTimestamps() async throws {
+        let replayCacheDirectory = makeReplayCacheDirectory()
+        let principal = try ClusterSession(
+            role: .principal,
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: nonEmptyAttestationVerifier,
+            replayCacheDirectory: replayCacheDirectory
+        )
+        let coProver = try ClusterSession(
+            role: .coProver,
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: nonEmptyAttestationVerifier,
+            replayCacheDirectory: replayCacheDirectory
+        )
+
+        let principalID = await principal.deviceID
+        let coProverID = await coProver.deviceID
+        try await principal.pair(peerDeviceID: coProverID, sharedSecret: AcceptanceSupport.sharedSecret)
+        try await coProver.pair(peerDeviceID: principalID, sharedSecret: AcceptanceSupport.sharedSecret)
+
+        let keySeed = (32..<64).map(UInt8.init)
+        let key = AjtaiKey.expand(seed: keySeed, slotCount: 16)
+        let input = AcceptanceSupport.samplePiDECInput(key: key)
+        let packet = ClusterDecomposeWorkPacket(
+            witness: input.witness,
+            commitment: input.commitment,
+            keySeed: keySeed,
+            keySlotCount: key.slotCount,
+            decompBase: input.decompBase,
+            decompLimbs: input.decompLimbs
+        )
+        let fragment = try await principal.createDecomposeFragment(
+            shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 0xA1, count: 32)),
+            workPackage: packet.serialize(),
+            attestation: Data("cluster-attestation".utf8)
+        )
+
+        var stale = JobFragment(
+            fragmentID: fragment.fragmentID,
+            sessionID: fragment.sessionID,
+            kind: fragment.kind,
+            shapeDigest: fragment.shapeDigest,
+            encryptedPayload: fragment.encryptedPayload,
+            laneClasses: fragment.laneClasses,
+            confinedIndices: fragment.confinedIndices,
+            attestation: fragment.attestation,
+            signature: nil,
+            timestamp: Date(timeIntervalSinceNow: -(60 * 60 * 25))
+        )
+        stale.signature = try AcceptanceSupport.signer(stale.signingPayload())
+
+        do {
+            _ = try await coProver.processFragment(stale)
+            XCTFail("Expected stale cluster fragment to be rejected")
+        } catch let error as ClusterError {
+            guard case .invalidTimestamp = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testClusterRejectsReplayedFragmentAcrossSessionRestart() async throws {
+        let replayCacheDirectory = makeReplayCacheDirectory()
+        let principal = try ClusterSession(
+            role: .principal,
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: nonEmptyAttestationVerifier,
+            replayCacheDirectory: replayCacheDirectory
+        )
+        let firstCoProver = try ClusterSession(
+            role: .coProver,
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: nonEmptyAttestationVerifier,
+            replayCacheDirectory: replayCacheDirectory
+        )
+        try await firstCoProver.installWorkExecutor(ClusterWorkExecutor.standard())
+
+        let principalID = await principal.deviceID
+        let firstCoProverID = await firstCoProver.deviceID
+        try await principal.pair(peerDeviceID: firstCoProverID, sharedSecret: AcceptanceSupport.sharedSecret)
+        try await firstCoProver.pair(peerDeviceID: principalID, sharedSecret: AcceptanceSupport.sharedSecret)
+
+        let keySeed = (96..<128).map(UInt8.init)
+        let key = AjtaiKey.expand(seed: keySeed, slotCount: 16)
+        let input = AcceptanceSupport.samplePiDECInput(key: key)
+        let packet = ClusterDecomposeWorkPacket(
+            witness: input.witness,
+            commitment: input.commitment,
+            keySeed: keySeed,
+            keySlotCount: key.slotCount,
+            decompBase: input.decompBase,
+            decompLimbs: input.decompLimbs
+        )
+        let fragment = try await principal.createDecomposeFragment(
+            shapeDigest: ShapeDigest(bytes: [UInt8](repeating: 0xB2, count: 32)),
+            workPackage: packet.serialize(),
+            attestation: Data("cluster-attestation".utf8)
+        )
+
+        _ = try await firstCoProver.processFragment(fragment)
+
+        let restartedCoProver = try ClusterSession(
+            role: .coProver,
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: nonEmptyAttestationVerifier,
+            replayCacheDirectory: replayCacheDirectory
+        )
+        try await restartedCoProver.pair(peerDeviceID: principalID, sharedSecret: AcceptanceSupport.sharedSecret)
+
+        do {
+            _ = try await restartedCoProver.processFragment(fragment)
+            XCTFail("Expected replayed cluster fragment to be rejected after restart")
+        } catch let error as ClusterError {
+            guard case .replayedFragment = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
     private func makePairedClusterSessions() async throws -> (principal: ClusterSession, coProver: ClusterSession) {
-        let principal = ClusterSession(
+        let principal = try ClusterSession(
             role: .principal,
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
             attestationVerifier: nonEmptyAttestationVerifier
         )
-        let coProver = ClusterSession(
+        let coProver = try ClusterSession(
             role: .coProver,
             fragmentSigner: AcceptanceSupport.signer,
             peerVerifier: AcceptanceSupport.verifier,
@@ -337,6 +461,11 @@ final class ClusterWorkPacketTests: XCTestCase {
             packedChunkCount: commitment.packedChunkCount,
             statementDigest: commitment.statementDigest
         )
+    }
+
+    private func makeReplayCacheDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
     }
 }
 

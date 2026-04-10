@@ -181,12 +181,7 @@ public actor FoldVault {
         ) {
             return opened
         }
-
-        do {
-            return try AES.GCM.open(box, using: key)
-        } catch {
-            throw VaultError.corruptedData
-        }
+        throw VaultError.corruptedData
     }
 
     private static func readFixedWidthInteger<T: FixedWidthInteger>(

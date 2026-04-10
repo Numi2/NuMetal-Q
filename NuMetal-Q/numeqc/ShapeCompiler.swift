@@ -102,7 +102,7 @@ public struct ShapeCompiler {
 
         // 3. Build transcript constants
         let transcriptConstants = ShapeArtifact.transcriptConstants(for: shape)
-        let gpuArtifactDigest = ShapeArtifact.gpuArtifactDigest()
+        let gpuArtifactDigest = try ShapeArtifact.gpuArtifactDigest()
         let profileCertificate = try ProfileCertificate.deterministicArtifactData(for: .canonical)
         let deciderLayout = ShapeArtifact.deciderLayout(for: shape)
 

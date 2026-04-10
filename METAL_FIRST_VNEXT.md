@@ -30,7 +30,7 @@
   - GPU family
   - canonical Metal artifact digest
   - storage layout version
-- `MetalContext` now prefers bundled offline `NuMetal.metallib`, then the default library, and only falls back to source compilation in debug or test.
+- `MetalContext` now loads the measured bundled `NuMetal.metallib` when present and only falls back to source compilation in debug or test.
 - Offline Metal artifacts can be generated with `Scripts/build_metal_artifacts.sh`, which emits:
   - `NuMetal-Q/NuMetal/Compiled/NuMetal.metallib`
   - `NuMetal-Q/NuMetal/Compiled/NuMetalManifest.json`

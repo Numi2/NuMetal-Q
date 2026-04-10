@@ -185,6 +185,27 @@ final class CryptoHardeningTests: XCTestCase {
         XCTAssertFalse(PiRLC.verify(inputs: tamperedInputs, output: output, key: key, transcript: &verifyTranscript))
     }
 
+    func testPiRLCRejectsOutputWhenInheritedErrorTermsChange() {
+        let key = NuParams.derive(from: .canonical).fold.commitmentKey
+        let inputs = AcceptanceSupport.samplePiRLCInputs(key: key, seed: 117)
+        var transcript = NuTranscriptField(domain: "Tests.PiRLC.ErrorTerms")
+        let output = PiRLC.prove(inputs: inputs, key: key, transcript: &transcript)
+
+        let tamperedFirst = PiRLC.Input(
+            commitment: inputs[0].commitment,
+            witness: inputs[0].witness,
+            publicInputs: inputs[0].publicInputs,
+            ccsEvaluations: inputs[0].ccsEvaluations,
+            relaxationFactor: inputs[0].relaxationFactor,
+            errorTerms: [inputs[0].errorTerms[0] + RingElement(constant: .one)]
+        )
+        var tamperedInputs = inputs
+        tamperedInputs[0] = tamperedFirst
+
+        var verifyTranscript = NuTranscriptField(domain: "Tests.PiRLC.ErrorTerms")
+        XCTAssertFalse(PiRLC.verify(inputs: tamperedInputs, output: output, key: key, transcript: &verifyTranscript))
+    }
+
     func testPiDECDirectAndNegative() {
         let key = NuParams.derive(from: .canonical).fold.commitmentKey
         let input = AcceptanceSupport.samplePiDECInput(key: key, seed: 88)

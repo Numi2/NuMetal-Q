@@ -279,6 +279,33 @@ final class ApplePQIntegrationTests: XCTestCase {
         }
     }
 
+    func testFoldVaultRejectsCiphertextWithoutAssociatedData() async throws {
+        let storageDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let vault = FoldVault(storageDirectory: storageDirectory)
+        let unlockMaterial = Data("NuMetalQ.Vault.NoAAD".utf8)
+        let state = makeVaultTestState(shapeByte: 0x81)
+
+        try await vault.unlock(with: unlockMaterial)
+        let serialized = try await vault.serializeStateForTesting(state)
+        let derivedKey = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: unlockMaterial),
+            salt: Data("NuMeQ.FoldVault.v1".utf8),
+            info: Data(),
+            outputByteCount: 32
+        )
+        let sealed = try AES.GCM.seal(serialized, using: derivedKey)
+        let fileURL = storageDirectory.appendingPathComponent("\(state.chainID.uuidString).vault")
+        try sealed.combined!.write(to: fileURL)
+
+        do {
+            _ = try await vault.retrieve(chainID: state.chainID)
+            XCTFail("Expected unbound AES-GCM ciphertext to be rejected")
+        } catch let error as VaultError {
+            XCTAssertEqual(error, .corruptedData)
+        }
+    }
+
 }
 
 private func makeVaultTestState(shapeByte: UInt8) -> FoldState {

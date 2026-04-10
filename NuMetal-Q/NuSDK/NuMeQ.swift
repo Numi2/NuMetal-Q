@@ -251,8 +251,8 @@ public actor NuMeQ {
         fragmentSigner: @escaping @Sendable (Data) throws -> Data,
         peerVerifier: @escaping PQVerifyClosure,
         attestationVerifier: AttestationVerifier? = nil
-    ) -> ClusterSession {
-        ClusterSession(
+    ) throws -> ClusterSession {
+        try ClusterSession(
             role: .principal,
             fragmentSigner: fragmentSigner,
             peerVerifier: peerVerifier,
@@ -265,8 +265,8 @@ public actor NuMeQ {
         fragmentSigner: @escaping @Sendable (Data) throws -> Data,
         peerVerifier: @escaping PQVerifyClosure,
         attestationVerifier: AttestationVerifier? = nil
-    ) -> ClusterSession {
-        ClusterSession(
+    ) throws -> ClusterSession {
+        try ClusterSession(
             role: .coProver,
             fragmentSigner: fragmentSigner,
             peerVerifier: peerVerifier,

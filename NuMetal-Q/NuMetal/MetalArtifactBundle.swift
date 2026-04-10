@@ -34,9 +34,8 @@ internal enum MetalArtifactBundle {
     static func artifactDigest() throws -> [UInt8] {
         var payload = Data("NuMeQ.MetalArtifact.v1".utf8)
         payload.append(try manifestData())
-        if let metallibURL = compiledMetallibURL(),
-           let metallibData = try? Data(contentsOf: metallibURL) {
-            payload.append(metallibData)
+        if let metallibURL = compiledMetallibURL() {
+            payload.append(try Data(contentsOf: metallibURL))
         } else {
             payload.append(Data(try combinedSource().utf8))
         }
@@ -50,9 +49,6 @@ internal enum MetalArtifactBundle {
     static func makeLibrary(device: MTLDevice) throws -> MTLLibrary {
         if let metallibURL = compiledMetallibURL() {
             return try device.makeLibrary(URL: metallibURL)
-        }
-        if let defaultLibrary = device.makeDefaultLibrary() {
-            return defaultLibrary
         }
         guard allowSourceFallback else {
             throw NuMetalError.libraryNotFound

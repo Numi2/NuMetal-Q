@@ -334,12 +334,12 @@ struct NuMetalQAcceptanceDemo {
         clusterShape: CompiledShape,
         signer: DemoSigningMaterial
     ) async throws -> ClusterDemoReport {
-        let principal = await engine.startClusterAsPrincipal(
+        let principal = try await engine.startClusterAsPrincipal(
             fragmentSigner: signer.sign,
             peerVerifier: signer.verify,
             attestationVerifier: demoAttestationVerifier
         )
-        let coProver = await engine.startClusterAsCoProver(
+        let coProver = try await engine.startClusterAsCoProver(
             fragmentSigner: signer.sign,
             peerVerifier: signer.verify,
             attestationVerifier: demoAttestationVerifier

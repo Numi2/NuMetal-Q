@@ -35,6 +35,10 @@ public enum ClusterState: Sendable {
 
 /// A cluster proving session between an iPhone (principal) and MacBook (co-prover).
 public actor ClusterSession {
+    private static let replayCacheLimit = 4_096
+    private static let replayCacheWindow: TimeInterval = 60 * 60 * 24
+    private static let maximumFutureSkew: TimeInterval = 60 * 5
+
     public let sessionID: UUID
     public let role: ClusterRole
     public private(set) var state: ClusterState = .discovering
@@ -63,6 +67,10 @@ public actor ClusterSession {
     /// Fragments currently being executed to avoid duplicate work.
     private var inFlightFragmentPayloads: [UUID: Data] = [:]
 
+    /// Durable fragment replay cache for this local role.
+    private let replayCacheURL: URL
+    private var processedFragments: [UUID: Date] = [:]
+
     /// Installed executor for delegated fold/seal/decomposition work.
     private var workExecutor: ClusterWorkExecutor?
 
@@ -70,14 +78,20 @@ public actor ClusterSession {
         role: ClusterRole,
         fragmentSigner: @escaping @Sendable (Data) throws -> Data,
         peerVerifier: @escaping PQVerifyClosure,
-        attestationVerifier: AttestationVerifier? = nil
-    ) {
+        attestationVerifier: AttestationVerifier? = nil,
+        replayCacheDirectory: URL? = nil
+    ) throws {
         self.sessionID = UUID()
         self.role = role
         self.localDeviceID = UUID()
         self.signFragment = fragmentSigner
         self.verifyPeerSignature = peerVerifier
         self.attestationVerifier = attestationVerifier
+        self.replayCacheURL = try Self.resolveReplayCacheURL(
+            role: role,
+            replayCacheDirectory: replayCacheDirectory
+        )
+        self.processedFragments = try Self.loadReplayCache(from: replayCacheURL)
     }
 
     /// Stable device identifier for pairing and channel binding.
@@ -218,6 +232,8 @@ public actor ClusterSession {
         guard role == .coProver else { throw ClusterError.wrongRole }
         guard state.isActive else { throw ClusterError.notPaired }
         try fragment.validateSecurityInvariants()
+        let now = Date()
+        try validateTimestamp(fragment.timestamp, now: now)
         let signingPayload = fragment.signingPayload()
         try verifySignatureIfNeeded(payload: signingPayload, signature: fragment.signature)
         try bindRemoteSessionIfNeeded(fragment.sessionID)
@@ -239,6 +255,7 @@ public actor ClusterSession {
             }
             throw ClusterError.replayedFragment
         }
+        try rejectReplay(of: fragment, now: now)
 
         inFlightFragmentPayloads[fragment.fragmentID] = signingPayload
 
@@ -266,6 +283,7 @@ public actor ClusterSession {
         )
 
         let signed = try sign(result)
+        try recordProcessed(fragment.fragmentID, now: now)
         processedFragmentPayloads[fragment.fragmentID] = signingPayload
         completedResults[fragment.fragmentID] = signed
         return signed
@@ -274,6 +292,7 @@ public actor ClusterSession {
     /// Receive a result from the co-prover (principal side).
     public func receiveResult(_ result: FragmentResult) throws -> Data {
         guard role == .principal else { throw ClusterError.wrongRole }
+        try validateTimestamp(result.timestamp, now: Date())
         guard pendingFragments[result.fragmentID] != nil else {
             throw ClusterError.unknownFragment
         }
@@ -414,6 +433,110 @@ public actor ClusterSession {
         )
         guard try attestationVerifier(attestation, context) else {
             throw ClusterError.attestationInvalid
+        }
+    }
+
+    private func validateTimestamp(_ timestamp: Date, now: Date) throws {
+        let raw = timestamp.timeIntervalSince1970
+        guard raw.isFinite else {
+            throw ClusterError.invalidTimestamp
+        }
+        guard timestamp <= now.addingTimeInterval(Self.maximumFutureSkew) else {
+            throw ClusterError.invalidTimestamp
+        }
+        guard timestamp >= now.addingTimeInterval(-Self.replayCacheWindow) else {
+            throw ClusterError.invalidTimestamp
+        }
+    }
+
+    private func rejectReplay(of fragment: JobFragment, now: Date) throws {
+        pruneReplayCache(now: now)
+        guard processedFragments[fragment.fragmentID] == nil else {
+            throw ClusterError.replayedFragment
+        }
+    }
+
+    private func recordProcessed(_ fragmentID: UUID, now: Date) throws {
+        pruneReplayCache(now: now)
+        processedFragments[fragmentID] = now
+        try persistReplayCache()
+    }
+
+    private func pruneReplayCache(now: Date) {
+        let cutoff = now.addingTimeInterval(-Self.replayCacheWindow)
+        processedFragments = processedFragments.filter { _, seenAt in
+            seenAt >= cutoff
+        }
+        guard processedFragments.count > Self.replayCacheLimit else {
+            return
+        }
+
+        let overflow = processedFragments.count - Self.replayCacheLimit
+        let oldest = processedFragments
+            .sorted { lhs, rhs in lhs.value < rhs.value }
+            .prefix(overflow)
+        for entry in oldest {
+            processedFragments.removeValue(forKey: entry.key)
+        }
+    }
+
+    private func persistReplayCache() throws {
+        let entries = processedFragments
+            .sorted { lhs, rhs in lhs.value < rhs.value }
+            .map { ClusterPersistedReplayEntry(fragmentID: $0.key, seenAt: $0.value) }
+        let payload = ClusterPersistedReplayCache(entries: entries)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        do {
+            let data = try encoder.encode(payload)
+            try data.write(to: replayCacheURL, options: .atomic)
+        } catch {
+            throw ClusterError.replayCachePersistenceFailed
+        }
+    }
+
+    private static func resolveReplayCacheURL(
+        role: ClusterRole,
+        replayCacheDirectory: URL?
+    ) throws -> URL {
+        let directory: URL
+        if let replayCacheDirectory {
+            directory = replayCacheDirectory
+        } else {
+            guard let appSupport = FileManager.default.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
+            ).first else {
+                throw ClusterError.replayCachePersistenceFailed
+            }
+            directory = appSupport.appendingPathComponent("NuMeQ/ClusterReplay", isDirectory: true)
+        }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            throw ClusterError.replayCachePersistenceFailed
+        }
+
+        let roleComponent: String
+        switch role {
+        case .principal:
+            roleComponent = "principal"
+        case .coProver:
+            roleComponent = "co-prover"
+        }
+        return directory.appendingPathComponent("\(roleComponent).json")
+    }
+
+    private static func loadReplayCache(from url: URL) throws -> [UUID: Date] {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return [:]
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            let payload = try JSONDecoder().decode(ClusterPersistedReplayCache.self, from: data)
+            return Dictionary(uniqueKeysWithValues: payload.entries.map { ($0.fragmentID, $0.seenAt) })
+        } catch {
+            throw ClusterError.replayCachePersistenceFailed
         }
     }
 }
@@ -618,5 +741,16 @@ public enum ClusterError: Error, Sendable {
     case attestationInvalid
     case executorUnavailable
     case invalidSharedSecret
+    case invalidTimestamp
+    case replayCachePersistenceFailed
     case replayedFragment
+}
+
+private struct ClusterPersistedReplayCache: Codable {
+    let entries: [ClusterPersistedReplayEntry]
+}
+
+private struct ClusterPersistedReplayEntry: Codable {
+    let fragmentID: UUID
+    let seenAt: Date
 }

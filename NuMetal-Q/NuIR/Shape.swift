@@ -300,6 +300,7 @@ public enum ShapePackValidationError: Error, Sendable {
     case invalidSignature
     case invalidProfileCertificate
     case incompleteArtifacts
+    case gpuArtifactUnavailable
 }
 
 /// Proof-ready bundle that binds the logical shape metadata to a signed
@@ -343,6 +344,12 @@ public struct CompiledShape: Sendable {
               shapePack.kernelConfigs.allSatisfy(\.isCanonicalProductionConfig) else {
             throw ShapePackValidationError.incompleteArtifacts
         }
+        let expectedGPUArtifactDigest: [UInt8]
+        do {
+            expectedGPUArtifactDigest = try ShapeArtifact.gpuArtifactDigest()
+        } catch {
+            throw ShapePackValidationError.gpuArtifactUnavailable
+        }
         guard shapePack.shapeMetadata == ShapeArtifact.shapeMetadata(for: shape),
               shapePack.liftedMatrices == ShapeArtifact.liftedMatrices(shape.relation.matrices),
               shapePack.gpuLiftedMatrices == ShapeArtifact.gpuLiftedMatrices(shape.relation.matrices),
@@ -350,7 +357,7 @@ public struct CompiledShape: Sendable {
               shapePack.ajtaiPublicParameters == ShapeArtifact.ajtaiPublicParameters(),
               shapePack.rotationTable == ShapeArtifact.rotationTableArtifact(),
               shapePack.transcriptConstants == ShapeArtifact.transcriptConstants(for: shape),
-              shapePack.gpuArtifactDigest == ShapeArtifact.gpuArtifactDigest(),
+              shapePack.gpuArtifactDigest == expectedGPUArtifactDigest,
               shapePack.profileCertificate == expectedProfileCertificate,
               shapePack.deciderLayout == ShapeArtifact.deciderLayout(for: shape) else {
             throw ShapePackValidationError.shapeArtifactMismatch
@@ -512,8 +519,8 @@ internal enum ShapeArtifact {
         return writer.data
     }
 
-    static func gpuArtifactDigest() -> [UInt8] {
-        (try? MetalArtifactBundle.artifactDigest()) ?? [UInt8](repeating: 0, count: 32)
+    static func gpuArtifactDigest() throws -> [UInt8] {
+        try MetalArtifactBundle.artifactDigest()
     }
 
     static func deciderLayout(for shape: Shape) -> Data {

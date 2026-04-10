@@ -85,18 +85,10 @@ public struct PiRLC: Sendable {
     ) -> Output {
         let k = inputs.count
         precondition(k >= 2, "PiRLC requires at least 2 instances")
+        precondition(hasCompatibleErrorShapes(inputs), "PiRLC error term shape mismatch")
 
         transcript.absorbLabel("PiRLC_k=\(k)")
-
-        for input in inputs {
-            transcript.absorb(ring: input.commitment.value)
-            for pi in input.publicInputs {
-                transcript.absorb(field: pi)
-            }
-            for evaluation in input.ccsEvaluations {
-                transcript.absorb(field: evaluation)
-            }
-        }
+        absorb(inputs: inputs, into: &transcript)
 
         // Compute cross-terms T_j for j = 1..k-1
         var crossTerms = [[RingElement]]()
@@ -133,7 +125,6 @@ public struct PiRLC: Sendable {
         var foldedPI = [Fq](repeating: .zero, count: inputs[0].publicInputs.count)
         var foldedEvaluations = [Fq](repeating: .zero, count: inputs[0].ccsEvaluations.count)
         var foldedU = Fq.zero
-        var foldedError = [RingElement]()
 
         for i in 0..<k {
             let rho = ringChallenges[i]
@@ -151,18 +142,11 @@ public struct PiRLC: Sendable {
             foldedU += rhoScalar * inputs[i].relaxationFactor
         }
 
-        // Add cross-term contributions to error
-        if !crossTerms.isEmpty {
-            foldedError = crossTerms[0]
-            for j in 1..<crossTerms.count {
-                let rho = ringChallenges[j]
-                for idx in 0..<foldedError.count {
-                    if idx < crossTerms[j].count {
-                        foldedError[idx] += rho * crossTerms[j][idx]
-                    }
-                }
-            }
-        }
+        let foldedError = foldErrorTerms(
+            inputs: inputs,
+            crossTerms: crossTerms,
+            ringChallenges: ringChallenges
+        )
 
         return Output(
             foldedCommitment: AjtaiCommitment(value: foldedCommitmentRing),
@@ -188,18 +172,10 @@ public struct PiRLC: Sendable {
     ) async throws -> Output {
         let k = inputs.count
         precondition(k >= 2, "PiRLC requires at least 2 instances")
+        precondition(hasCompatibleErrorShapes(inputs), "PiRLC error term shape mismatch")
 
         transcript.absorbLabel("PiRLC_k=\(k)")
-
-        for input in inputs {
-            transcript.absorb(ring: input.commitment.value)
-            for pi in input.publicInputs {
-                transcript.absorb(field: pi)
-            }
-            for evaluation in input.ccsEvaluations {
-                transcript.absorb(field: evaluation)
-            }
-        }
+        absorb(inputs: inputs, into: &transcript)
 
         var crossTerms = [[RingElement]]()
         for j in 1..<k {
@@ -235,7 +211,6 @@ public struct PiRLC: Sendable {
         var foldedPI = [Fq](repeating: .zero, count: inputs[0].publicInputs.count)
         var foldedEvaluations = [Fq](repeating: .zero, count: inputs[0].ccsEvaluations.count)
         var foldedU = Fq.zero
-        var foldedError = [RingElement]()
 
         for i in 0..<k {
             let rho = ringChallenges[i]
@@ -253,15 +228,11 @@ public struct PiRLC: Sendable {
             foldedU += rhoScalar * inputs[i].relaxationFactor
         }
 
-        if !crossTerms.isEmpty {
-            foldedError = crossTerms[0]
-            for j in 1..<crossTerms.count {
-                let rho = ringChallenges[j]
-                for idx in 0..<foldedError.count where idx < crossTerms[j].count {
-                    foldedError[idx] += rho * crossTerms[j][idx]
-                }
-            }
-        }
+        let foldedError = foldErrorTerms(
+            inputs: inputs,
+            crossTerms: crossTerms,
+            ringChallenges: ringChallenges
+        )
 
         return Output(
             foldedCommitment: AjtaiCommitment(value: foldedCommitmentRing),
@@ -285,17 +256,9 @@ public struct PiRLC: Sendable {
         let k = inputs.count
         guard k >= 2 else { return false }
         guard allInputsShareShape(inputs) else { return false }
+        guard hasCompatibleErrorShapes(inputs) else { return false }
         transcript.absorbLabel("PiRLC_k=\(k)")
-
-        for input in inputs {
-            transcript.absorb(ring: input.commitment.value)
-            for pi in input.publicInputs {
-                transcript.absorb(field: pi)
-            }
-            for evaluation in input.ccsEvaluations {
-                transcript.absorb(field: evaluation)
-            }
-        }
+        absorb(inputs: inputs, into: &transcript)
 
         let crossTerms = computeCrossTerms(inputs: inputs)
         let expectedCrossCommitments = crossTerms.map { terms in
@@ -349,18 +312,10 @@ public struct PiRLC: Sendable {
         let k = inputs.count
         guard k >= 2 else { return false }
         guard allInputsShareShape(inputs) else { return false }
+        guard hasCompatibleErrorShapes(inputs) else { return false }
 
         transcript.absorbLabel("PiRLC_k=\(k)")
-
-        for input in inputs {
-            transcript.absorb(ring: input.commitment.value)
-            for pi in input.publicInputs {
-                transcript.absorb(field: pi)
-            }
-            for evaluation in input.ccsEvaluations {
-                transcript.absorb(field: evaluation)
-            }
-        }
+        absorb(inputs: inputs, into: &transcript)
 
         let crossTerms = try computeCrossTermsMetal(inputs: inputs, context: context, trace: trace)
         let expectedCrossCommitments = try AjtaiCommitter.commitBatchMetal(
@@ -417,30 +372,6 @@ public struct PiRLC: Sendable {
             }
         )[0]
 
-        let foldedError: [RingElement]
-        if crossTerms.isEmpty {
-            foldedError = []
-        } else {
-            var errorChallenges = [RingElement(constant: .one)]
-            if crossTerms.count > 1 {
-                errorChallenges.append(contentsOf: ringChallenges[1..<crossTerms.count])
-            }
-            foldedError = try AG64RingMetal.bindFold(
-                context: context,
-                challengeRings: errorChallenges,
-                inputs: crossTerms,
-                ringCount: crossTerms[0].count,
-                trace: trace.map {
-                    TimedDispatchTraceContext(
-                        collector: $0,
-                        stage: "piRLC",
-                        iteration: $0.defaultIteration,
-                        dispatchLabel: "piRLC.fold_error"
-                    )
-                }
-            )
-        }
-
         var foldedPublicInputs = [Fq](repeating: .zero, count: inputs[0].publicInputs.count)
         var foldedEvaluations = [Fq](repeating: .zero, count: inputs[0].ccsEvaluations.count)
         var foldedRelaxation = Fq.zero
@@ -454,6 +385,12 @@ public struct PiRLC: Sendable {
             }
             foldedRelaxation += rhoScalar * inputs[index].relaxationFactor
         }
+
+        let foldedError = foldErrorTerms(
+            inputs: inputs,
+            crossTerms: crossTerms,
+            ringChallenges: ringChallenges
+        )
 
         return output.foldedCommitment == AjtaiCommitment(value: foldedCommitment)
             && output.foldedWitness == foldedWitness
@@ -473,6 +410,30 @@ public struct PiRLC: Sendable {
             $0.witness.count == witnessCount
                 && $0.publicInputs.count == publicInputCount
                 && $0.ccsEvaluations.count == evaluationCount
+        }
+    }
+
+    private static func hasCompatibleErrorShapes(_ inputs: [Input]) -> Bool {
+        let nonEmptyCounts = Set(inputs.map(\.errorTerms.count).filter { $0 > 0 })
+        return nonEmptyCounts.count <= 1
+    }
+
+    private static func absorb(
+        inputs: [Input],
+        into transcript: inout NuTranscriptField
+    ) {
+        for input in inputs {
+            transcript.absorb(ring: input.commitment.value)
+            for pi in input.publicInputs {
+                transcript.absorb(field: pi)
+            }
+            for evaluation in input.ccsEvaluations {
+                transcript.absorb(field: evaluation)
+            }
+            transcript.absorb(field: input.relaxationFactor)
+            for errorTerm in input.errorTerms {
+                transcript.absorb(ring: errorTerm)
+            }
         }
     }
 
@@ -570,24 +531,48 @@ public struct PiRLC: Sendable {
             foldedU += rhoScalar * inputs[i].relaxationFactor
         }
 
-        var foldedError = [RingElement]()
-        if !crossTerms.isEmpty {
-            foldedError = crossTerms[0]
-            for j in 1..<crossTerms.count {
-                let rho = ringChallenges[j]
-                for idx in 0..<foldedError.count where idx < crossTerms[j].count {
-                    foldedError[idx] += rho * crossTerms[j][idx]
-                }
-            }
-        }
-
         return (
             foldedCommitment: AjtaiCommitment(value: foldedCommitmentRing),
             foldedWitness: foldedWitness,
             foldedPublicInputs: foldedPI,
             foldedEvaluations: foldedEvaluations,
             foldedRelaxation: foldedU,
-            foldedError: foldedError
+            foldedError: foldErrorTerms(
+                inputs: inputs,
+                crossTerms: crossTerms,
+                ringChallenges: ringChallenges
+            )
         )
+    }
+
+    private static func foldErrorTerms(
+        inputs: [Input],
+        crossTerms: [[RingElement]],
+        ringChallenges: [RingElement]
+    ) -> [RingElement] {
+        let inheritedLength = inputs.map(\.errorTerms.count).max() ?? 0
+        let crossTermLength = crossTerms.map(\.count).max() ?? 0
+        let foldedLength = max(inheritedLength, crossTermLength)
+        guard foldedLength > 0 else {
+            return []
+        }
+
+        var foldedError = [RingElement](repeating: .zero, count: foldedLength)
+
+        for (inputIndex, input) in inputs.enumerated() {
+            let rho = ringChallenges[inputIndex]
+            for errorIndex in input.errorTerms.indices {
+                foldedError[errorIndex] += rho * input.errorTerms[errorIndex]
+            }
+        }
+
+        for crossIndex in crossTerms.indices {
+            let rho = ringChallenges[crossIndex + 1]
+            for errorIndex in crossTerms[crossIndex].indices {
+                foldedError[errorIndex] += rho * crossTerms[crossIndex][errorIndex]
+            }
+        }
+
+        return foldedError
     }
 }
