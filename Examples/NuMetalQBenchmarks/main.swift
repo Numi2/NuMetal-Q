@@ -4,10 +4,22 @@ import Darwin
 import Metal
 import NuMetal_Q
 
-@main
 enum NuMetalQBenchmarks {
     static func main() async throws {
-        let options = try Options(arguments: CommandLine.arguments.dropFirst())
+        let command = try BenchmarkCommand(arguments: CommandLine.arguments.dropFirst())
+        switch command {
+        case .help:
+            print(Options.usage)
+            return
+        case .listWorkloads:
+            print(Options.workloadListing)
+            return
+        case .run(let options):
+            try await run(options: options)
+        }
+    }
+
+    private static func run(options: Options) async throws {
         let outputDirectory = options.outputDirectory ?? defaultOutputDirectory()
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
@@ -1834,7 +1846,7 @@ enum NuMetalQBenchmarks {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let stamp = formatter.string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
-        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        return packageRootDirectory()
             .appendingPathComponent("artifacts", isDirectory: true)
             .appendingPathComponent("benchmarks", isDirectory: true)
             .appendingPathComponent(stamp, isDirectory: true)
@@ -1891,18 +1903,107 @@ enum NuMetalQBenchmarks {
     }
 }
 
-private struct Options {
+try await NuMetalQBenchmarks.main()
+
+struct Options {
     let iterations: Int
     let warmups: Int
     let outputDirectory: URL?
-    let sealWorkloads: [SealWorkload]
-    let pcsWorkloads: [PCSWorkload]
-    let verifierWorkloads: [VerifierWorkload]
+    fileprivate let sealWorkloads: [SealWorkload]
+    fileprivate let pcsWorkloads: [PCSWorkload]
+    fileprivate let verifierWorkloads: [VerifierWorkload]
 
-    init(arguments: ArraySlice<String>) throws {
+    fileprivate static let defaultSealWorkloads: [SealWorkload] = [
+        SealWorkload(
+            name: "auth-policy-sparse",
+            family: "pcd-auth",
+            scenario: "multi-factor authorization policy",
+            relationModel: "sparse local aggregate checks",
+            densityModel: .sparse,
+            rowCount: 64,
+            publicInputCount: 2,
+            sourceLanes: [
+                SealLaneBlueprint(name: "balances", width: .u16),
+                SealLaneBlueprint(name: "riskFlags", width: .bit),
+                SealLaneBlueprint(name: "approvals", width: .u8),
+            ],
+            leftTermsPerRow: 4,
+            rightTermsPerRow: 4
+        ),
+        SealWorkload(
+            name: "rollup-settlement-dense",
+            family: "pcd-rollup",
+            scenario: "batched settlement aggregation",
+            relationModel: "dense windowed linear aggregation checks",
+            densityModel: .dense,
+            rowCount: 64,
+            publicInputCount: 2,
+            sourceLanes: [
+                SealLaneBlueprint(name: "amounts", width: .u16),
+                SealLaneBlueprint(name: "fees", width: .u16),
+                SealLaneBlueprint(name: "nonces", width: .u32),
+                SealLaneBlueprint(name: "accountWeights", width: .u16),
+            ],
+            leftTermsPerRow: 14,
+            rightTermsPerRow: 14
+        ),
+    ]
+
+    fileprivate static let defaultPCSWorkloads: [PCSWorkload] = [
+        PCSWorkload(name: "pcs-8", numVars: 8),
+        PCSWorkload(name: "pcs-10", numVars: 10),
+        PCSWorkload(name: "pcs-12", numVars: 12),
+    ]
+
+    fileprivate static let defaultVerifierWorkloads: [VerifierWorkload] = [
+        VerifierWorkload(name: "piccs-verify", stage: .piCCS, arity: 1, witnessRingCount: 1, fieldCount: 4),
+        VerifierWorkload(name: "pirlc-verify", stage: .piRLC, arity: 3, witnessRingCount: 4, fieldCount: 2),
+        VerifierWorkload(name: "pidec-verify", stage: .piDEC, arity: 1, witnessRingCount: 3, fieldCount: RingElement.degree),
+    ]
+
+    static let usage = """
+    Usage: swift run NuMetalQBenchmarks [options]
+
+    Options:
+      --iterations N             Number of measured iterations per workload. Default: 9.
+      --warmups N                Number of warmup iterations per workload. Default: 2.
+      --output DIR               Directory to write benchmark artifacts into.
+      --seal-workload NAME       Run only the named seal workload. Repeat or comma-separate values.
+      --pcs-workload NAME        Run only the named PCS workload. Repeat or comma-separate values.
+      --verifier-workload NAME   Run only the named verifier workload. Repeat or comma-separate values.
+      --list-workloads           Print the built-in workloads and exit.
+      --help                     Show this help message.
+    """
+
+    static var workloadListing: String {
+        let seal = defaultSealWorkloads.map {
+            "  \($0.name) - \($0.family): \($0.scenario)"
+        }
+        let pcs = defaultPCSWorkloads.map {
+            "  \($0.name) - numVars=\($0.numVars)"
+        }
+        let verifier = defaultVerifierWorkloads.map {
+            "  \($0.name) - stage=\($0.stage.rawValue) arity=\($0.arity)"
+        }
+
+        return ([
+            "Seal workloads:",
+        ] + seal + [
+            "",
+            "PCS workloads:",
+        ] + pcs + [
+            "",
+            "Verifier workloads:",
+        ] + verifier).joined(separator: "\n")
+    }
+
+    static func parse(arguments: ArraySlice<String>) throws -> BenchmarkCommand {
         var iterations = 9
         var warmups = 2
         var outputDirectory: URL?
+        var selectedSealWorkloads: [String] = []
+        var selectedPCSWorkloads: [String] = []
+        var selectedVerifierWorkloads: [String] = []
 
         var iterator = arguments.makeIterator()
         while let argument = iterator.next() {
@@ -1922,62 +2023,99 @@ private struct Options {
                     throw BenchmarkError.invalidArguments("--output requires a directory path")
                 }
                 outputDirectory = URL(fileURLWithPath: value, isDirectory: true)
+            case "--seal-workload":
+                guard let value = iterator.next(), value.isEmpty == false else {
+                    throw BenchmarkError.invalidArguments("--seal-workload requires at least one workload name")
+                }
+                selectedSealWorkloads.append(contentsOf: splitSelectionArgument(value))
+            case "--pcs-workload":
+                guard let value = iterator.next(), value.isEmpty == false else {
+                    throw BenchmarkError.invalidArguments("--pcs-workload requires at least one workload name")
+                }
+                selectedPCSWorkloads.append(contentsOf: splitSelectionArgument(value))
+            case "--verifier-workload":
+                guard let value = iterator.next(), value.isEmpty == false else {
+                    throw BenchmarkError.invalidArguments("--verifier-workload requires at least one workload name")
+                }
+                selectedVerifierWorkloads.append(contentsOf: splitSelectionArgument(value))
+            case "--list-workloads":
+                return .listWorkloads
             case "--help":
-                print("Usage: swift run NuMetalQBenchmarks [--iterations N] [--warmups N] [--output DIR]")
-                Foundation.exit(0)
+                return .help
             default:
                 throw BenchmarkError.invalidArguments("unknown argument: \(argument)")
             }
         }
 
+        let sealWorkloads = try selectWorkloads(
+            from: defaultSealWorkloads,
+            selection: selectedSealWorkloads,
+            label: "seal"
+        )
+        let pcsWorkloads = try selectWorkloads(
+            from: defaultPCSWorkloads,
+            selection: selectedPCSWorkloads,
+            label: "pcs"
+        )
+        let verifierWorkloads = try selectWorkloads(
+            from: defaultVerifierWorkloads,
+            selection: selectedVerifierWorkloads,
+            label: "verifier"
+        )
+
+        return .run(Options(
+            iterations: iterations,
+            warmups: warmups,
+            outputDirectory: outputDirectory,
+            sealWorkloads: sealWorkloads,
+            pcsWorkloads: pcsWorkloads,
+            verifierWorkloads: verifierWorkloads
+        ))
+    }
+
+    private init(
+        iterations: Int,
+        warmups: Int,
+        outputDirectory: URL?,
+        sealWorkloads: [SealWorkload],
+        pcsWorkloads: [PCSWorkload],
+        verifierWorkloads: [VerifierWorkload]
+    ) {
         self.iterations = iterations
         self.warmups = warmups
         self.outputDirectory = outputDirectory
-        self.sealWorkloads = [
-            SealWorkload(
-                name: "auth-policy-sparse",
-                family: "pcd-auth",
-                scenario: "multi-factor authorization policy",
-                relationModel: "sparse local aggregate checks",
-                densityModel: .sparse,
-                rowCount: 64,
-                publicInputCount: 2,
-                sourceLanes: [
-                    SealLaneBlueprint(name: "balances", width: .u16),
-                    SealLaneBlueprint(name: "riskFlags", width: .bit),
-                    SealLaneBlueprint(name: "approvals", width: .u8),
-                ],
-                leftTermsPerRow: 4,
-                rightTermsPerRow: 4
-            ),
-            SealWorkload(
-                name: "rollup-settlement-dense",
-                family: "pcd-rollup",
-                scenario: "batched settlement aggregation",
-                relationModel: "dense windowed linear aggregation checks",
-                densityModel: .dense,
-                rowCount: 64,
-                publicInputCount: 2,
-                sourceLanes: [
-                    SealLaneBlueprint(name: "amounts", width: .u16),
-                    SealLaneBlueprint(name: "fees", width: .u16),
-                    SealLaneBlueprint(name: "nonces", width: .u32),
-                    SealLaneBlueprint(name: "accountWeights", width: .u16),
-                ],
-                leftTermsPerRow: 14,
-                rightTermsPerRow: 14
-            ),
-        ]
-        self.pcsWorkloads = [
-            PCSWorkload(name: "pcs-8", numVars: 8),
-            PCSWorkload(name: "pcs-10", numVars: 10),
-            PCSWorkload(name: "pcs-12", numVars: 12),
-        ]
-        self.verifierWorkloads = [
-            VerifierWorkload(name: "piccs-verify", stage: .piCCS, arity: 1, witnessRingCount: 1, fieldCount: 4),
-            VerifierWorkload(name: "pirlc-verify", stage: .piRLC, arity: 3, witnessRingCount: 4, fieldCount: 2),
-            VerifierWorkload(name: "pidec-verify", stage: .piDEC, arity: 1, witnessRingCount: 3, fieldCount: RingElement.degree),
-        ]
+        self.sealWorkloads = sealWorkloads
+        self.pcsWorkloads = pcsWorkloads
+        self.verifierWorkloads = verifierWorkloads
+    }
+
+    private static func splitSelectionArgument(_ argument: String) -> [String] {
+        argument
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+    }
+
+    private static func selectWorkloads<T>(
+        from workloads: [T],
+        selection: [String],
+        label: String
+    ) throws -> [T] where T: NamedBenchmarkWorkload {
+        guard selection.isEmpty == false else {
+            return workloads
+        }
+
+        let requested = Set(selection)
+        let available = Set(workloads.map(\.name))
+        let unknown = requested.subtracting(available).sorted()
+        guard unknown.isEmpty else {
+            let validNames = workloads.map(\.name).joined(separator: ", ")
+            throw BenchmarkError.invalidArguments(
+                "unknown \(label) workload(s): \(unknown.joined(separator: ", ")). Available: \(validNames)"
+            )
+        }
+
+        return workloads.filter { requested.contains($0.name) }
     }
 }
 
@@ -2159,6 +2297,14 @@ private struct VerifierWorkload: Codable {
     let witnessRingCount: Int
     let fieldCount: Int
 }
+
+private protocol NamedBenchmarkWorkload {
+    var name: String { get }
+}
+
+extension SealWorkload: NamedBenchmarkWorkload {}
+extension PCSWorkload: NamedBenchmarkWorkload {}
+extension VerifierWorkload: NamedBenchmarkWorkload {}
 
 private struct PCSCPUCommitArtifact {
     let codeword: [Fq]
@@ -2684,16 +2830,14 @@ private actor BenchmarkArtifactWriter {
         bundleURL: URL,
         encoder: JSONEncoder
     ) throws {
+        let documentationPaths = BenchmarkDocumentationPaths.current()
         let bundle = ReviewBundle(
             generatedAt: generatedAt,
             canonicalBackendID: NuSealConstants.productionBackendID,
             canonicalSealWireMagic: "NuSeal",
-            protocolNotePath: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appendingPathComponent("docs/protocol-note.md").path,
-            stateOfTheArtPath: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appendingPathComponent("docs/state-of-the-art.md").path,
-            benchmarkingGuidePath: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appendingPathComponent("docs/benchmarking.md").path,
+            protocolNotePath: documentationPaths.protocolNotePath,
+            stateOfTheArtPath: documentationPaths.stateOfTheArtPath,
+            benchmarkingGuidePath: documentationPaths.benchmarkingGuidePath,
             benchmarkReportJSONPath: benchmarkReportJSONPath,
             benchmarkReportMarkdownPath: benchmarkReportMarkdownPath,
             benchmarkDispatchTracePath: benchmarkDispatchTracePath,
@@ -2724,11 +2868,24 @@ private actor BenchmarkArtifactWriter {
     }
 }
 
-private enum BenchmarkError: Error {
+private enum BenchmarkError: LocalizedError {
     case invalidArguments(String)
     case invalidVerification(String)
     case invalidWorkload(String)
     case metalMismatch(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidArguments(let message):
+            return message
+        case .invalidVerification(let message):
+            return "verification failed: \(message)"
+        case .invalidWorkload(let message):
+            return "invalid workload: \(message)"
+        case .metalMismatch(let message):
+            return "metal mismatch: \(message)"
+        }
+    }
 }
 
 private extension Array {

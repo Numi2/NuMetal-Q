@@ -360,11 +360,7 @@ private func makeMinimalPublicSealProof(instanceCount: UInt32) -> PublicSealProo
         deciderLayoutDigest: [],
         sealParamDigest: [],
         publicHeader: Data(),
-        instanceCount: instanceCount,
-        finalAccumulatorCommitment: AjtaiCommitment(value: .zero),
-        publicInputs: [],
-        relaxationFactor: .one,
-        errorTerms: []
+        publicInputs: Array(repeating: .zero, count: Int(instanceCount))
     )
     return PublicSealProof(statement: statement, terminalProof: terminalProof)
 }
@@ -382,8 +378,6 @@ private func makeOversizedPublicInputsSealProof() throws -> Data {
         + 4
         + 4
         + 4
-        + 4
-        + RingElement.degree * MemoryLayout<UInt64>.size
     let oversizedCount = UInt32(65_537).littleEndian
     withUnsafeBytes(of: oversizedCount) { bytes in
         serialized.replaceSubrange(offset..<offset + MemoryLayout<UInt32>.size, with: bytes)

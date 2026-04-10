@@ -2,9 +2,17 @@ import Foundation
 import CryptoKit
 import NuMetal_Q
 
-@main
 struct NuMetalQAcceptanceDemo {
     static func main() async throws {
+        switch try AcceptanceDemoCommand(arguments: CommandLine.arguments.dropFirst()) {
+        case .help:
+            print(AcceptanceDemoOptions.usage)
+        case .run(let options):
+            try await run(options: options)
+        }
+    }
+
+    private static func run(options: AcceptanceDemoOptions) async throws {
         let signer = try makeSigningMaterial()
         let compiledShape = try makeCompiledShape(signer: signer)
         let clusterShape = try makeClusterCompiledShape(signer: signer)
@@ -21,68 +29,13 @@ struct NuMetalQAcceptanceDemo {
         )
         let challengeSetDescription = profile.challengeSet.map(String.init).joined(separator: ", ")
 
-        print("NuMetalQ Acceptance Demo")
-        print("========================")
-
-        printSection("Profile")
-        print("profile: \(profile.name)")
-        print("security bits: \(profile.securityBits)")
-        print("parameter pin: \(hexPrefix(compiledCertificate.parameterPin, count: 8))")
-        print("challenge set: \(challengeSetDescription)")
-        print("irreducibility proof: \(certificate.irreducibilityProof.verified)")
-        print("derived params verify: \(params.verify())")
-        print("scheduler: arity=\(scheduler.maxArity) queueDepth=\(scheduler.queueDepth) aggressiveSeal=\(scheduler.aggressiveSeal)")
-
-        printSection("Shape Compiler")
-        print("shape: \(compiledShape.shape.name)")
-        print("shape digest: \(hexPrefix(compiledShape.shape.digest.bytes, count: 8))")
-        print("lanes: \(compiledShape.shape.lanes.count)")
-        print("commitment bits: \(compiledShape.shape.totalCommitmentBits)")
-        print("shape pack signature bytes: \(compiledShape.shapePack.signature.count)")
-        for config in compiledShape.shapePack.kernelConfigs {
-            print(
-                "kernel[\(config.gpuFamilyTag)]: tg=\(config.threadgroupSize) tiles=\(config.tilesPerThreadgroup) foldArity=\(config.foldArity)"
-            )
-        }
-
-        printSection("Metal")
-        print("device: \(metalContext.device.name)")
-        print("gpu family: \(metalContext.gpuFamilyTag)")
-        print("max threads per threadgroup: \(metalContext.maxThreadsPerThreadgroupWidth)")
-
         let superNeoReport = try await runSuperNeoFoldingDemo(metalContext: metalContext)
-        printSection("SuperNeo Folding")
-        print("stages exercised: PiCCS x2, PiRLC, PiDEC")
-        print("PiDEC input: canonical bounded witness packet")
-        print("PiCCS verified: \(superNeoReport.piCCSVerified)")
-        print("PiCCS metal matches CPU: \(superNeoReport.piCCSMetalMatches)")
-        print("PiCCS sum-check rounds: \(superNeoReport.sumcheckRounds)")
-        print("PiRLC verified: \(superNeoReport.piRLCVerified)")
-        print("PiRLC metal matches CPU: \(superNeoReport.piRLCMetalMatches)")
-        print("ring challenge coeff[0]: \(superNeoReport.ringChallengeScalars)")
-        print("cross-term commitments: \(superNeoReport.crossTermCommitmentCount)")
-        print("PiDEC verified: \(superNeoReport.piDECVerified)")
-        print("PiDEC metal matches CPU: \(superNeoReport.piDECMetalMatches)")
-        print("decomposition limbs: \(superNeoReport.decompositionLimbCount)")
-        print("warmed thread execution width: \(metalContext.threadExecutionWidth)")
 
         let localFlow = try await runSDKFlow(
             engine: engine,
             compiledShape: compiledShape,
             signer: signer
         )
-        printSection("SDK Flow")
-        print("seed handles: \(localFlow.seedCount)")
-        print("logical statement count: \(localFlow.logicalStatementCount)")
-        print("seal backend: \(localFlow.envelope.sealBackendID)")
-        print("envelope signature valid: \(localFlow.signatureValid)")
-        print("verify result: \(localFlow.verification.isValid)")
-        print("resumed chain: \(localFlow.restored.chainID.uuidString)")
-        print("sealed logical statements: \(localFlow.logicalStatementCount)")
-        print("outer Spartan rounds: \(localFlow.sealProof.terminalProof.outerSumcheck.roundEvaluations.count)")
-        print("PCS batch classes: \(localFlow.hachiBatchClassCount)")
-        print("PCS openings: \(localFlow.hachiOpeningCount)")
-        print("matrix commitments: \(localFlow.matrixCommitmentCount)")
 
         let clusterReport = try await runClusterDemo(
             engine: engine,
@@ -90,27 +43,90 @@ struct NuMetalQAcceptanceDemo {
             clusterShape: clusterShape,
             signer: signer
         )
-        printSection("Cluster")
-        print("confined lane indices: \(clusterReport.confinedIndices)")
-        print("delegated commitment differs from final: \(clusterReport.delegatedCommitmentChanged)")
-        print("confined-handle eligibility: \(clusterReport.confinedEligibility)")
-        print("session returned to paired: \(clusterReport.sessionReusable)")
-        print("delegatable-handle eligibility: \(clusterReport.delegatableEligibility)")
-        print("cluster seal verify result: \(clusterReport.clusterVerification.isValid)")
 
         let syncReport = try await runSyncDemo(
             envelope: localFlow.envelope,
             signer: signer
         )
-        printSection("Sync")
-        print("message id: \(syncReport.messageID.uuidString)")
-        print("ciphertext bytes: \(syncReport.ciphertextBytes)")
-        print("signature bytes: \(syncReport.signatureBytes)")
-        print("attestation carried through sync: \(syncReport.attestationPresent)")
-        print("opened envelope matches original: \(syncReport.envelopeRoundTrip)")
+        let snapshot = AcceptanceDemoSnapshot(
+            generatedAt: ISO8601DateFormatter().string(from: Date()),
+            profile: .init(
+                name: profile.name,
+                securityBits: profile.securityBits,
+                parameterPinPrefix: hexPrefix(compiledCertificate.parameterPin, count: 8),
+                challengeSetDescription: challengeSetDescription,
+                irreducibilityVerified: certificate.irreducibilityProof.verified,
+                derivedParamsVerified: params.verify(),
+                schedulerMaxArity: scheduler.maxArity,
+                schedulerQueueDepth: scheduler.queueDepth,
+                schedulerAggressiveSeal: scheduler.aggressiveSeal
+            ),
+            shapeCompiler: .init(
+                shapeName: compiledShape.shape.name,
+                shapeDigestPrefix: hexPrefix(compiledShape.shape.digest.bytes, count: 8),
+                laneCount: compiledShape.shape.lanes.count,
+                commitmentBits: compiledShape.shape.totalCommitmentBits,
+                shapePackSignatureBytes: compiledShape.shapePack.signature.count,
+                kernelConfigurations: compiledShape.shapePack.kernelConfigs.map {
+                    .init(
+                        gpuFamilyTag: $0.gpuFamilyTag,
+                        threadgroupSize: Int($0.threadgroupSize),
+                        tilesPerThreadgroup: Int($0.tilesPerThreadgroup),
+                        foldArity: Int($0.foldArity)
+                    )
+                }
+            ),
+            metal: .init(
+                deviceName: metalContext.device.name,
+                gpuFamilyTag: metalContext.gpuFamilyTag,
+                maxThreadsPerThreadgroup: metalContext.maxThreadsPerThreadgroupWidth,
+                warmedThreadExecutionWidth: metalContext.threadExecutionWidth
+            ),
+            superNeo: .init(
+                stagesExercised: "PiCCS x2, PiRLC, PiDEC",
+                piDECInput: "canonical bounded witness packet",
+                piCCSVerified: superNeoReport.piCCSVerified,
+                piCCSMetalMatchesCPU: superNeoReport.piCCSMetalMatches,
+                piCCSSumcheckRounds: superNeoReport.sumcheckRounds,
+                piRLCVerified: superNeoReport.piRLCVerified,
+                piRLCMetalMatchesCPU: superNeoReport.piRLCMetalMatches,
+                ringChallengeCoefficientZero: superNeoReport.ringChallengeScalars,
+                crossTermCommitments: superNeoReport.crossTermCommitmentCount,
+                piDECVerified: superNeoReport.piDECVerified,
+                piDECMetalMatchesCPU: superNeoReport.piDECMetalMatches,
+                decompositionLimbs: superNeoReport.decompositionLimbCount
+            ),
+            sdkFlow: .init(
+                seedHandles: localFlow.seedCount,
+                logicalStatementCount: localFlow.logicalStatementCount,
+                sealBackendID: localFlow.envelope.sealBackendID,
+                envelopeSignatureValid: localFlow.signatureValid,
+                verificationResult: localFlow.verification.isValid,
+                resumedChainID: localFlow.restored.chainID.uuidString,
+                outerSpartanRounds: localFlow.sealProof.terminalProof.outerSumcheck.roundEvaluations.count,
+                pcsBatchClasses: localFlow.hachiBatchClassCount,
+                pcsOpenings: localFlow.hachiOpeningCount,
+                matrixCommitments: localFlow.matrixCommitmentCount
+            ),
+            cluster: .init(
+                confinedLaneIndices: clusterReport.confinedIndices,
+                delegatedCommitmentDiffersFromFinal: clusterReport.delegatedCommitmentChanged,
+                confinedHandleEligibility: clusterReport.confinedEligibility,
+                sessionReturnedToPaired: clusterReport.sessionReusable,
+                delegatableHandleEligibility: clusterReport.delegatableEligibility,
+                clusterSealVerificationResult: clusterReport.clusterVerification.isValid
+            ),
+            sync: .init(
+                messageID: syncReport.messageID.uuidString,
+                ciphertextBytes: syncReport.ciphertextBytes,
+                signatureBytes: syncReport.signatureBytes,
+                attestationCarriedThroughSync: syncReport.attestationPresent,
+                openedEnvelopeMatchesOriginal: syncReport.envelopeRoundTrip
+            ),
+            summary: "acceptance demo succeeded across profile, compiler, metal, SuperNeo stages, SDK flow, cluster, and sync"
+        )
 
-        printSection("Completed")
-        print("acceptance demo succeeded across profile, compiler, metal, SuperNeo stages, SDK flow, cluster, and sync")
+        try emit(snapshot: snapshot, options: options)
     }
 
     private static func runSuperNeoFoldingDemo(
@@ -626,6 +642,8 @@ struct NuMetalQAcceptanceDemo {
         return RingElement(coeffs: Array(padded.prefix(RingElement.degree)))
     }
 }
+
+try await NuMetalQAcceptanceDemo.main()
 
 private struct DemoSigningMaterial {
     let signerKeyID: Data
