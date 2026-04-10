@@ -13,6 +13,29 @@ require_line() {
   fi
 }
 
+tree_contains_literal() {
+  local needle="$1"
+  local path="$2"
+
+  if command -v rg >/dev/null 2>&1; then
+    rg -Fq -- "$needle" "$path"
+  else
+    grep -RFq -- "$needle" "$path"
+  fi
+}
+
+tree_contains_test_function() {
+  local test_name="$1"
+  local path="$2"
+  local pattern="func[[:space:]]+${test_name}([^[:alnum:]_]|$)"
+
+  if command -v rg >/dev/null 2>&1; then
+    rg -q -- "$pattern" "$path"
+  else
+    grep -REq -- "$pattern" "$path"
+  fi
+}
+
 extract_current_version() {
   local file="$1"
   local symbol="$2"
@@ -46,16 +69,16 @@ while IFS= read -r filter; do
   if [[ "$filter" == *"/"* ]]; then
     suite="${filter%%/*}"
     test_name="${filter##*/}"
-    if ! rg -q "func ${test_name}\b" Tests/NuMetal_QTests; then
+    if ! tree_contains_test_function "$test_name" "Tests/NuMetal_QTests"; then
       echo "missing documented test function: $filter" >&2
       exit 1
     fi
-    if ! rg -q "${suite}" Tests/NuMetal_QTests; then
+    if ! tree_contains_literal "$suite" "Tests/NuMetal_QTests"; then
       echo "missing documented test suite: $filter" >&2
       exit 1
     fi
   else
-    if ! rg -q "${filter}" Tests/NuMetal_QTests; then
+    if ! tree_contains_literal "$filter" "Tests/NuMetal_QTests"; then
       echo "missing documented test suite: $filter" >&2
       exit 1
     fi
