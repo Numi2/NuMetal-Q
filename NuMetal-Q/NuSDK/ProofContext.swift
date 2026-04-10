@@ -223,7 +223,7 @@ public actor ProofContext {
         try verifyEnvelopeAttestation(
             envelope,
             requireAttestation: envelope.attestation != nil,
-            purpose: .envelopeExport
+            purpose: .envelopeVerification
         )
 
         activeStates.removeValue(forKey: handle.chainID)
@@ -276,7 +276,7 @@ public actor ProofContext {
         try verifyEnvelopeAttestation(
             envelope,
             requireAttestation: envelope.attestation != nil,
-            purpose: .envelopeExport
+            purpose: .envelopeVerification
         )
 
         activeStates.removeValue(forKey: handle.chainID)
@@ -338,7 +338,7 @@ public actor ProofContext {
         try verifyEnvelopeAttestation(
             envelope,
             requireAttestation: true,
-            purpose: .envelopeExport
+            purpose: .envelopeVerification
         )
 
         activeStates.removeValue(forKey: handle.chainID)
@@ -395,7 +395,7 @@ public actor ProofContext {
         try verifyEnvelopeAttestation(
             envelope,
             requireAttestation: true,
-            purpose: .envelopeExport
+            purpose: .envelopeVerification
         )
 
         activeStates.removeValue(forKey: handle.chainID)

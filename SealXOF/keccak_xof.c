@@ -215,7 +215,7 @@ void numeq_seal_shake256(
     keccak_squeeze(state, output, output_len);
 }
 
-void numeq_seal_cshake256(
+int numeq_seal_cshake256(
     const uint8_t *name,
     size_t name_len,
     const uint8_t *custom,
@@ -227,7 +227,7 @@ void numeq_seal_cshake256(
 ) {
     if ((name_len == 0 || name == NULL) && (custom_len == 0 || custom == NULL)) {
         numeq_seal_shake256(input, input_len, output, output_len);
-        return;
+        return 1;
     }
 
     uint64_t state[KECCAK_LANES];
@@ -244,7 +244,7 @@ void numeq_seal_cshake256(
         free(encoded_name);
         free(encoded_custom);
         free(combined);
-        return;
+        return 0;
     }
     memcpy(combined, encoded_name, encoded_name_len);
     memcpy(combined + encoded_name_len, encoded_custom, encoded_custom_len);
@@ -255,7 +255,7 @@ void numeq_seal_cshake256(
         free(encoded_name);
         free(encoded_custom);
         free(combined);
-        return;
+        return 0;
     }
 
     size_t total_len = customized_len + input_len;
@@ -265,7 +265,7 @@ void numeq_seal_cshake256(
         free(encoded_custom);
         free(combined);
         free(customized);
-        return;
+        return 0;
     }
     memcpy(message, customized, customized_len);
     if (input_len > 0) {
@@ -280,4 +280,5 @@ void numeq_seal_cshake256(
     free(combined);
     free(customized);
     free(message);
+    return 1;
 }

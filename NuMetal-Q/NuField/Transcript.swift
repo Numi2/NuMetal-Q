@@ -282,7 +282,7 @@ public struct NuSealCShake256: Sendable, NuByteDigestTranscript {
         let bytes = Array(data)
         let name = Array(functionName)
         let custom = Array(customization)
-        numeq_seal_cshake256(
+        let success = numeq_seal_cshake256(
             name,
             name.count,
             custom,
@@ -292,6 +292,7 @@ public struct NuSealCShake256: Sendable, NuByteDigestTranscript {
             &out,
             out.count
         )
+        precondition(success == 1, "NuSeal cSHAKE256 failed")
         return out
     }
 

@@ -89,11 +89,7 @@ public enum SealProofCodec {
         writer.appendLengthPrefixed(statement.deciderLayoutDigest)
         writer.appendLengthPrefixed(statement.sealParamDigest)
         writer.appendLengthPrefixed(statement.publicHeader)
-        writer.append(statement.instanceCount)
-        encode(statement.finalAccumulatorCommitment, into: &writer)
         encode(statement.publicInputs, into: &writer)
-        encode(statement.relaxationFactor, into: &writer)
-        encode(statement.errorTerms, into: &writer)
     }
 
     private static func decodeStatement(from reader: inout BinaryReader) throws -> PublicSealStatement {
@@ -104,15 +100,8 @@ public enum SealProofCodec {
             deciderLayoutDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
             sealParamDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
             publicHeader: try reader.readLengthPrefixedData(maxCount: Limits.publicHeaderBytes),
-            instanceCount: try reader.readUInt32(),
-            finalAccumulatorCommitment: try decodeCommitment(from: &reader),
-            publicInputs: try decodeFqArray(from: &reader, maxCount: Limits.publicInputs),
-            relaxationFactor: try decodeFq(from: &reader),
-            errorTerms: try decodeRingArray(from: &reader, maxCount: Limits.ringElements)
+            publicInputs: try decodeFqArray(from: &reader, maxCount: Limits.publicInputs)
         )
-        guard statement.instanceCount > 0 else {
-            throw BinaryReader.Error.invalidData
-        }
         return statement
     }
 

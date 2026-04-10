@@ -45,6 +45,8 @@ public struct AttestationContext: Sendable {
     public let purpose: AttestationPurpose
     public let appID: String?
     public let teamID: String?
+    /// Stable author/target device identifiers for the attested artifact.
+    /// These are not validator-relative roles.
     public let localDeviceID: UUID?
     public let remoteDeviceID: UUID?
     public let sessionID: UUID?

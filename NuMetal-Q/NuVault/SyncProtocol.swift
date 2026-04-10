@@ -108,7 +108,8 @@ public actor SyncChannel {
         if requireAttestation {
             try verifyEnvelopeAttestation(
                 envelope,
-                remoteDeviceID: recipientID,
+                senderDeviceID: localDeviceID,
+                recipientDeviceID: recipientID,
                 purpose: .syncEnvelope
             )
         }
@@ -163,7 +164,8 @@ public actor SyncChannel {
         if requireAttestation {
             try verifyEnvelopeAttestation(
                 envelope,
-                remoteDeviceID: recipientID,
+                senderDeviceID: localDeviceID,
+                recipientDeviceID: recipientID,
                 purpose: .syncEnvelope
             )
         }
@@ -292,7 +294,8 @@ public actor SyncChannel {
         if requireAttestation {
             try verifyEnvelopeAttestation(
                 envelope,
-                remoteDeviceID: message.senderDeviceID,
+                senderDeviceID: message.senderDeviceID,
+                recipientDeviceID: message.recipientDeviceID,
                 purpose: .syncEnvelope
             )
         }
@@ -318,7 +321,8 @@ public actor SyncChannel {
         if requireAttestation {
             try verifyEnvelopeAttestation(
                 envelope,
-                remoteDeviceID: message.senderDeviceID,
+                senderDeviceID: message.senderDeviceID,
+                recipientDeviceID: message.recipientDeviceID,
                 purpose: .syncEnvelope
             )
         }
@@ -412,7 +416,8 @@ public actor SyncChannel {
 
     private func verifyEnvelopeAttestation(
         _ envelope: ProofEnvelope,
-        remoteDeviceID: UUID,
+        senderDeviceID: UUID,
+        recipientDeviceID: UUID,
         purpose: AttestationPurpose
     ) throws {
         guard let attestation = envelope.attestation, attestation.isEmpty == false else {
@@ -425,8 +430,8 @@ public actor SyncChannel {
             purpose: purpose,
             appID: envelope.appID,
             teamID: envelope.teamID,
-            localDeviceID: localDeviceID,
-            remoteDeviceID: remoteDeviceID,
+            localDeviceID: senderDeviceID,
+            remoteDeviceID: recipientDeviceID,
             shapeDigest: envelope.shapeDigest,
             signerKeyID: envelope.signerKeyID,
             timestamp: envelope.timestamp,

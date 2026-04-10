@@ -185,7 +185,6 @@ enum ResumeArtifactBuilder {
         writer.appendLengthPrefixed(proofDigest)
         writer.append(Data(proof.statement.shapeDigest.bytes))
         writer.appendLengthPrefixed(Data(proof.statement.backendID.utf8))
-        ResumePayloadCodec.encode(proof.statement.finalAccumulatorCommitment, into: &writer)
         writer.appendLengthPrefixed(Data(SealProofCodec.statementDigest(for: proof.statement)))
         return writer.data
     }

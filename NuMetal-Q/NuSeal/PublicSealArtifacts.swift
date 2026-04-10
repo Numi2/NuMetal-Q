@@ -14,11 +14,7 @@ public struct PublicSealStatement: Sendable, Codable, Equatable {
     public let deciderLayoutDigest: [UInt8]
     public let sealParamDigest: [UInt8]
     public let publicHeader: Data
-    public let instanceCount: UInt32
-    public let finalAccumulatorCommitment: AjtaiCommitment
     public let publicInputs: [Fq]
-    public let relaxationFactor: Fq
-    public let errorTerms: [RingElement]
 
     public init(
         backendID: String,
@@ -27,11 +23,7 @@ public struct PublicSealStatement: Sendable, Codable, Equatable {
         deciderLayoutDigest: [UInt8],
         sealParamDigest: [UInt8],
         publicHeader: Data,
-        instanceCount: UInt32,
-        finalAccumulatorCommitment: AjtaiCommitment,
-        publicInputs: [Fq],
-        relaxationFactor: Fq,
-        errorTerms: [RingElement]
+        publicInputs: [Fq]
     ) {
         self.backendID = backendID
         self.sealTranscriptID = sealTranscriptID
@@ -39,16 +31,12 @@ public struct PublicSealStatement: Sendable, Codable, Equatable {
         self.deciderLayoutDigest = deciderLayoutDigest
         self.sealParamDigest = sealParamDigest
         self.publicHeader = publicHeader
-        self.instanceCount = instanceCount
-        self.finalAccumulatorCommitment = finalAccumulatorCommitment
         self.publicInputs = publicInputs
-        self.relaxationFactor = relaxationFactor
-        self.errorTerms = errorTerms
     }
 }
 
 public struct PublicSealProof: Sendable, Codable {
-    public static let currentVersion: UInt16 = 3
+    public static let currentVersion: UInt16 = 4
 
     public let version: UInt16
     public let statement: PublicSealStatement

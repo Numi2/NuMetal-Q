@@ -78,7 +78,7 @@ struct NuMetalQAcceptanceDemo {
         print("envelope signature valid: \(localFlow.signatureValid)")
         print("verify result: \(localFlow.verification.isValid)")
         print("resumed chain: \(localFlow.restored.chainID.uuidString)")
-        print("seal proof instances: \(localFlow.sealProof.statement.instanceCount)")
+        print("sealed logical statements: \(localFlow.logicalStatementCount)")
         print("outer Spartan rounds: \(localFlow.sealProof.terminalProof.outerSumcheck.roundEvaluations.count)")
         print("PCS batch classes: \(localFlow.hachiBatchClassCount)")
         print("PCS openings: \(localFlow.hachiOpeningCount)")
@@ -316,7 +316,7 @@ struct NuMetalQAcceptanceDemo {
 
         return SDKFlowReport(
             seedCount: handles.count,
-            logicalStatementCount: Int(sealProof.statement.instanceCount),
+            logicalStatementCount: handles.count,
             envelope: sealedExport.proofEnvelope,
             signatureValid: signatureValid,
             verification: verification,

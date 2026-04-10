@@ -241,7 +241,7 @@ public actor ClusterSession {
             throw ClusterError.attestationRequired
         }
         _ = attestation
-        try verifyAttestation(fragment, purpose: .clusterExecution)
+        try verifyAttestation(fragment, purpose: .clusterDelegation)
         if let processedPayload = processedFragmentPayloads[fragment.fragmentID] {
             guard processedPayload == signingPayload,
                   let cachedResult = completedResults[fragment.fragmentID] else {

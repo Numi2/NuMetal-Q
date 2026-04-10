@@ -297,11 +297,7 @@ public actor FoldEngine {
             throw FoldEngineError.invalidRecursiveAccumulator
         }
 
-        guard accumulator.currentCommitment == proof.statement.finalAccumulatorCommitment,
-              accumulator.statementCount == proof.statement.instanceCount,
-              accumulator.currentClaim.publicInputs == proof.statement.publicInputs,
-              accumulator.currentClaim.relaxationFactor == proof.statement.relaxationFactor,
-              accumulator.currentClaim.errorTerms == proof.statement.errorTerms,
+        guard accumulator.currentClaim.publicInputs == proof.statement.publicInputs,
               Data(accumulator.leafPublicInputs().flatMap { $0.toBytes() }) == proof.statement.publicHeader else {
             throw FoldEngineError.invalidRecursiveAccumulator
         }

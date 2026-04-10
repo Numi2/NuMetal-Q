@@ -11,7 +11,7 @@ void numeq_seal_shake256(
     size_t output_len
 );
 
-void numeq_seal_cshake256(
+int numeq_seal_cshake256(
     const uint8_t *name,
     size_t name_len,
     const uint8_t *custom,

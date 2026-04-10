@@ -7,6 +7,7 @@ import Foundation
 /// that the Ajtai commitment binds the entire typed trace.
 public actor MetalFoldProver {
     private let profile: NuProfile
+    private let policy: NuPolicy
     private let foldEngine: FoldEngine
     private let vault: FoldVault
     private let metalContext: MetalContext?
@@ -17,6 +18,7 @@ public actor MetalFoldProver {
 
     public init(
         profile: NuProfile = .canonical,
+        policy: NuPolicy = .standard,
         vaultDirectory: URL? = nil,
         vaultKeyMaterial: Data
     ) async throws {
@@ -26,6 +28,7 @@ public actor MetalFoldProver {
         }
 
         self.profile = profile
+        self.policy = policy
         self.foldEngine = FoldEngine(config: .canonical, seed: profile.foldParameterSeed)
         self.vault = FoldVault(storageDirectory: vaultDirectory)
 
@@ -189,6 +192,10 @@ public actor MetalFoldProver {
         }
 
         try validateTrace(trace, compiledShape: compiledShape)
+        let expectedWitnessClass = try maxPersistableWitnessClass(for: trace)
+        guard state.maxWitnessClass == expectedWitnessClass else {
+            throw MetalFoldProverError.unsupportedStoredState
+        }
         let aggregateWitness = try aggregateTraceWitness(trace, shape: compiledShape.shape)
         guard aggregateWitness == state.accumulatedWitness else {
             throw MetalFoldProverError.unsupportedStoredState
@@ -225,6 +232,7 @@ public actor MetalFoldProver {
             decompBase: profile.decompBase,
             decompLimbs: profile.decompLimbs
         )
+        let maxWitnessClass = try maxPersistableWitnessClass(for: trace)
 
         return FoldState(
             kind: .typedTrace,
@@ -239,10 +247,42 @@ public actor MetalFoldProver {
             errorTerms: [],
             blindingMask: .zero,
             relaxationFactor: .one,
-            maxWitnessClass: .public,
+            maxWitnessClass: maxWitnessClass,
             stageAudit: [],
             typedTrace: trace
         )
+    }
+
+    private func maxPersistableWitnessClass(for trace: TypedPcdTrace) throws -> WitnessClass {
+        var maxWitnessClass = WitnessClass.public
+        for node in trace.nodes {
+            let nodeClass = try maxPersistableWitnessClass(for: node.witness)
+            if nodeClass.rawValue > maxWitnessClass.rawValue {
+                maxWitnessClass = nodeClass
+            }
+        }
+        return maxWitnessClass
+    }
+
+    private func maxPersistableWitnessClass(for witness: Witness) throws -> WitnessClass {
+        var maxWitnessClass = WitnessClass.public
+        for lane in witness.lanes {
+            let laneID = lane.descriptor.name
+            guard policy.isPersistable(laneID) else {
+                throw MetalFoldProverError.policyViolation(
+                    PolicyViolation(
+                        kind: .ephemeralCannotPersist,
+                        laneID: laneID,
+                        message: "Lane '\(laneID)' has class \(policy.classForLane(laneID)) and cannot be persisted"
+                    )
+                )
+            }
+            let witnessClass = policy.classForLane(laneID)
+            if witnessClass.rawValue > maxWitnessClass.rawValue {
+                maxWitnessClass = witnessClass
+            }
+        }
+        return maxWitnessClass
     }
 
     private func validateTrace(
@@ -388,6 +428,7 @@ public enum MetalFoldProverError: Error, Sendable {
     case invalidHeaderEncoding
     case invalidWitness
     case accumulatorTooLarge
+    case policyViolation(PolicyViolation)
     case stepNotRegistered(String)
     case unsupportedStoredState
 }

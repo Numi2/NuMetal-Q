@@ -36,8 +36,7 @@ public actor HachiSealEngine: NuSealCompiler {
         let statement = makeStatement(
             accumulator: accumulator,
             shape: shape,
-            publicHeader: publicHeader,
-            instanceCount: state.statementCount
+            publicHeader: publicHeader
         )
 
         let terminalProof = try await buildTerminalProof(
@@ -67,8 +66,7 @@ public actor HachiSealEngine: NuSealCompiler {
         let statement = makeStatement(
             accumulator: accumulator,
             shape: shape,
-            publicHeader: publicHeader,
-            instanceCount: state.statementCount
+            publicHeader: publicHeader
         )
         let terminalProof = try await buildTerminalProofUsingCluster(
             accumulator: accumulator,
@@ -94,8 +92,7 @@ public actor HachiSealEngine: NuSealCompiler {
     private func makeStatement(
         accumulator: FoldAccumulator,
         shape: Shape,
-        publicHeader: Data,
-        instanceCount: UInt32
+        publicHeader: Data
     ) -> PublicSealStatement {
         PublicSealStatement(
             backendID: backendID,
@@ -107,11 +104,7 @@ public actor HachiSealEngine: NuSealCompiler {
             ),
             sealParamDigest: parameterBundle.parameterDigest,
             publicHeader: publicHeader,
-            instanceCount: instanceCount,
-            finalAccumulatorCommitment: accumulator.currentCommitment,
-            publicInputs: accumulator.currentClaim.publicInputs,
-            relaxationFactor: accumulator.currentClaim.relaxationFactor,
-            errorTerms: accumulator.currentClaim.errorTerms
+            publicInputs: accumulator.currentClaim.publicInputs
         )
     }
 
@@ -184,9 +177,6 @@ public actor HachiSealEngine: NuSealCompiler {
             )
             guard proof.statement.deciderLayoutDigest == expectedLayoutDigest else {
                 return fail("decider layout digest mismatch")
-            }
-            guard proof.statement.instanceCount > 0 else {
-                return fail("instance count mismatch")
             }
             guard proof.statement.publicInputs.count == shape.relation.nPublic else {
                 return fail("public input count mismatch")
@@ -660,20 +650,7 @@ private extension HachiSealEngine {
         transcript.absorb(label: "numeq.decider.decider_layout_digest", bytes: Data(statement.deciderLayoutDigest))
         transcript.absorb(label: "numeq.decider.parameter_digest", bytes: Data(statement.sealParamDigest))
         transcript.absorb(label: "numeq.decider.public_header", bytes: statement.publicHeader)
-        transcript.absorb(
-            label: "numeq.decider.instance_count",
-            bytes: Data(withUnsafeBytes(of: statement.instanceCount.littleEndian) { Array($0) })
-        )
-        transcript.absorb(
-            label: "numeq.decider.accumulator_commitment",
-            bytes: Data(statement.finalAccumulatorCommitment.value.toBytes())
-        )
         transcript.absorb(label: "numeq.decider.public_inputs", scalars: statement.publicInputs)
-        transcript.absorb(label: "numeq.decider.relaxation", scalars: [statement.relaxationFactor])
-        transcript.absorb(
-            label: "numeq.decider.error_terms",
-            bytes: Data(statement.errorTerms.flatMap { $0.toBytes() })
-        )
         return transcript
     }
 

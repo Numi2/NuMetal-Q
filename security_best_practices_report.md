@@ -2,106 +2,106 @@
 
 ## Executive Summary
 
-This review focused on the recursive proof system, transcript/XOF implementation, envelope and resume bindings, the encrypted vault, the cluster delegation channel, and the signed GPU artifact path. I did not run the test suite.
+This review focused on the proof transcript, recursive folding, sealing and verification flow, attestation handling, vault persistence, sync and cluster transport, and the custom cSHAKE implementation. I did not run the test suite.
 
-The most serious issue is in `PiRLC`: the recursive folding stage does not carry forward the existing relaxed-claim `errorTerms`, and its cross-term construction is anchored only to `inputs[0]`. Because both prover and verifier share that logic, the recursive verifier can accept folded claims that are no longer equivalent to their children after the first non-trivial fold.
+The most serious cryptographic weakness I found is in `PiRLC`: field-valued claim components are folded with `rho.coeffs[0]`, so each scalar challenge lives in `{ -1, 0, 1, 2 }` instead of a full-field domain. That collapses the randomness protecting folded public inputs, matrix evaluations, and relaxation factors from field-sized entropy to 2 bits per child.
 
-I also found integrity gaps in the GPU artifact validation path, a legacy-style vault decryption fallback that weakens ciphertext binding, replay/freshness gaps in cluster work handling, and a fail-open behavior in the cSHAKE C shim under allocation failure.
+I also found a systemic attestation design bug: the same serialized attestation blob is reused across phases while being validated under different `AttestationPurpose` values, and in sync flows under different local/remote device bindings. With a strict verifier, those flows are not satisfiable; with a permissive verifier, the purpose and device fields stop carrying security meaning.
+
+Separately, public seal verification does not semantically enforce several fields exposed in `PublicSealStatement`, the public typed prover bypasses the witness-class policy model and persists full typed traces as `.public`, and the cSHAKE C shim still fails open on allocation failure.
 
 ## Critical Findings
 
-### 1. `PiRLC` does not preserve the relaxed CCS error state across recursive folds
+### 1. `PiRLC` folds field-valued claim components with only a 2-bit scalar projection of each ring challenge
 
-Impact: recursive proofs can be accepted even though the folded claim no longer represents the semantics of its child accumulators.
+Impact: folded public inputs, matrix evaluations, and relaxation factors are protected by only four possible coefficients per child, materially weakening recursive soundness and making collision-style targeting of folded claims much easier than the protocol comments imply.
 
 Evidence:
 
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuFold/FoldEngine.swift:913`](./NuMetal-Q/NuFold/FoldEngine.swift) passes `summary.currentClaim.errorTerms` into `PiRLC.Input`.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuFold/PiRLC.swift:101`](./NuMetal-Q/NuFold/PiRLC.swift) computes new cross-terms only from `inputs[0].witness` against later witnesses.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuFold/PiRLC.swift:154`](./NuMetal-Q/NuFold/PiRLC.swift) builds `foldedError` from those new cross-terms only.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuFold/PiRLC.swift:573`](./NuMetal-Q/NuFold/PiRLC.swift) repeats the same logic in the verifier helper.
+- `NuMetal-Q/NuFold/PiRLC.swift:113-119` samples `ringChallenges` from `NuSampler.challengeRingFromC(...)` and then derives `scalarChallenges` as `ringChallenges.map { $0.coeffs[0] }`.
+- `NuMetal-Q/NuFold/PiRLC.swift:129-143` uses those 4-value `rhoScalar` values to fold `publicInputs`, `ccsEvaluations`, and `relaxationFactor`.
+- `NuMetal-Q/NuFold/PiRLC.swift:345-387` repeats the same projection in the Metal verifier path.
+- `NuMetal-Q/NuField/Transcript.swift:472-492` shows each coefficient of `challengeRingFromC` is sampled from `C = { -1, 0, 1, 2 }`, so `coeffs[0]` carries only 2 bits of entropy.
 
 Why this is a bug:
 
-- `PiRLC.Input` explicitly carries prior `errorTerms`, which means the recursive state expects them to participate in the next fold.
-- The implementation never reads `input.errorTerms` in either the prover or verifier.
-- The cross-term computation is also asymmetric: it only multiplies `inputs[0]` by each later witness instead of accounting for the already-relaxed child claims in general.
-- As a result, once an accumulator already contains non-empty `errorTerms`, the next fold silently drops part of the recursive claim while still producing a verifier-accepted transcript.
+- The comments for `PiRLC` describe a random linear combination over transcript challenges, but the field-valued components are not folded with a field challenge or a high-entropy projection of the ring challenge.
+- Using the constant coefficient gives only four scalar possibilities per folded child.
+- Because the prover and verifier share the same reduction, malformed folded claims can target this tiny challenge space and still verify.
 
 ## High Findings
 
-### 2. Shape-pack GPU artifact validation can fail open and does not guarantee the runtime executes the measured artifact
+### 2. The same attestation blob is validated under mutually incompatible purposes and device contexts
 
-Impact: a signed `ShapePack` can validate without proving that the GPU library actually loaded at runtime matches the artifact that was hashed and signed.
+Impact: if the attestation verifier actually enforces `purpose`, `localDeviceID`, or `remoteDeviceID`, export/sync/cluster flows become unsatisfiable; if deployments relax those checks to interoperate, the attestation context stops carrying the security meaning the API suggests.
 
 Evidence:
 
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuIR/Shape.swift:353`](./NuMetal-Q/NuIR/Shape.swift) accepts `shapePack.gpuArtifactDigest == ShapeArtifact.gpuArtifactDigest()`.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuIR/Shape.swift:515`](./NuMetal-Q/NuIR/Shape.swift) maps any `MetalArtifactBundle.artifactDigest()` failure to 32 zero bytes instead of failing closed.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/numeqc/ShapeCompiler.swift:105`](./NuMetal-Q/numeqc/ShapeCompiler.swift) uses the same helper during signing, so a build-time failure can also freeze an all-zero digest into a signed pack.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuMetal/MetalArtifactBundle.swift:34`](./NuMetal-Q/NuMetal/MetalArtifactBundle.swift) hashes either the bundled `metallib` or the source files.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuMetal/MetalArtifactBundle.swift:50`](./NuMetal-Q/NuMetal/MetalArtifactBundle.swift) may execute `device.makeDefaultLibrary()` instead of either measured input when no bundled `metallib` is found.
+- Proof export validates the envelope attestation under `.envelopeExport` in `NuMetal-Q/NuSDK/ProofContext.swift:223-227`, while later proof verification validates the same `envelope.attestation` under `.envelopeVerification` in `NuMetal-Q/NuSDK/ProofContext.swift:557-569` and `NuMetal-Q/NuSDK/NuMeQ.swift:158-180`.
+- Sync send-side validation uses `.syncEnvelope` with `localDeviceID = sender` and `remoteDeviceID = recipient` in `NuMetal-Q/NuVault/SyncProtocol.swift:109-113` and `NuMetal-Q/NuVault/SyncProtocol.swift:424-435`, while receive-side validation reuses the same blob with `localDeviceID = recipient` and `remoteDeviceID = sender` in `NuMetal-Q/NuVault/SyncProtocol.swift:293-297` and `NuMetal-Q/NuVault/SyncProtocol.swift:319-323`.
+- Cluster delegation validates the fragment attestation under `.clusterDelegation` in `NuMetal-Q/NuCluster/ClusterSession.swift:159`, `NuMetal-Q/NuCluster/ClusterSession.swift:191`, and `NuMetal-Q/NuCluster/ClusterSession.swift:220`, then the co-prover revalidates that same `fragment.attestation` under `.clusterExecution` in `NuMetal-Q/NuCluster/ClusterSession.swift:244` using the context builder in `NuMetal-Q/NuCluster/ClusterSession.swift:425-435`.
 
 Why this matters:
 
-- The zero-digest fallback is fail-open: digest computation errors degrade into a concrete value that can be signed and later accepted.
-- Even when digest computation succeeds, the runtime can execute `makeDefaultLibrary()` while validation compared the shape pack against the bundled `metallib` or source tree instead.
-- That breaks the claimed binding between the signed shape pack and the GPU kernels that actually prove or verify statements.
+- There is only one serialized `attestation` field on `ProofEnvelope` and one on `JobFragment`.
+- The code treats those single blobs as if they can simultaneously satisfy different `AttestationPurpose` values and, in sync, opposite local/remote device bindings.
+- The current tests avoid this by using permissive verifiers (`nonEmptyAttestationVerifier`) or by testing only the verification-purpose envelope path, so the stricter intended semantics are not exercised.
+
+### 3. Standalone seal verification does not semantically enforce `finalAccumulatorCommitment`, `relaxationFactor`, or `errorTerms`
+
+Impact: a sealed proof can verify publicly even if these exposed statement fields are inaccurate. Consumers calling `verify(...)` do not actually get assurance about the recursive accumulator metadata the API surfaces and the resume path later trusts.
+
+Evidence:
+
+- `NuMetal-Q/NuSeal/PublicSealArtifacts.swift:17-21` exposes `finalAccumulatorCommitment`, `publicInputs`, `relaxationFactor`, and `errorTerms` as part of `PublicSealStatement`.
+- `NuMetal-Q/NuSeal/HachiSealEngine.swift:655-676` absorbs those fields into the Fiat-Shamir transcript.
+- `NuMetal-Q/NuSeal/HachiSealEngine.swift:223-255` and `NuMetal-Q/NuSeal/HachiSealEngine.swift:935-973` only enforce equations over `publicInputs`, row evaluations, matrix values, and witness evaluations; there is no semantic check tying the proof to `finalAccumulatorCommitment`, `relaxationFactor`, or `errorTerms`.
+- `NuMetal-Q/NuSDK/NuMeQ.swift:189-204` and `NuMetal-Q/NuSDK/ProofContext.swift:578-590` accept the proof once header binding and seal verification succeed.
+- `NuMetal-Q/NuFold/FoldEngine.swift:300-305` later treats those same statement fields as authoritative when restoring a sealed recursive state.
+
+Why this matters:
+
+- These fields are not just inert metadata: the resume path depends on them to match the encrypted accumulator artifact.
+- Public verification, however, only proves the seal decider over the witness/public-input path and transcript commitments, not the truthfulness of these accumulator fields.
+- A malicious prover with signing authority can therefore publish a publicly “valid” envelope whose accumulator metadata is misleading or unusable for resume.
 
 ## Medium Findings
 
-### 3. Vault decryption still accepts non-AAD AES-GCM records after the chain-bound open fails
+### 4. `MetalFoldProver` bypasses the witness-class policy model and persists typed traces as `.public`
 
-Impact: legacy or maliciously reintroduced vault records can bypass the `chainID` binding that current writes rely on.
-
-Evidence:
-
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuVault/FoldVault.swift:98`](./NuMetal-Q/NuVault/FoldVault.swift) stores entries using AES-GCM with `vaultAssociatedData(for: state.chainID)`.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuVault/FoldVault.swift:177`](./NuMetal-Q/NuVault/FoldVault.swift) first tries to open with that AAD.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuVault/FoldVault.swift:185`](./NuMetal-Q/NuVault/FoldVault.swift) then falls back to `AES.GCM.open(box, using: key)` with no AAD.
-
-Why this matters:
-
-- The file format and comments claim entries are chain-bound.
-- The fallback means the reader still accepts a weaker, unbound ciphertext class.
-- If older records exist, or if an attacker can inject a no-AAD ciphertext under a recovered key, the vault stops enforcing the `chainID` binding the rest of the code assumes.
-
-### 4. Cluster work packets have timestamps and in-memory replay tracking, but no freshness check or durable replay cache
-
-Impact: signed fragments can be replayed after long delays or across process restarts, causing stale delegated work to be re-executed.
+Impact: callers can persist device-confined or ephemeral witness material through the public typed prover path, contrary to the trust model documented for `NuPolicy`.
 
 Evidence:
 
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuCluster/ClusterSession.swift:134`](./NuMetal-Q/NuCluster/ClusterSession.swift), [`/Users/home/NuMetal-Q/NuMetal-Q/NuCluster/ClusterSession.swift:166`](./NuMetal-Q/NuCluster/ClusterSession.swift), and [`/Users/home/NuMetal-Q/NuMetal-Q/NuCluster/ClusterSession.swift:195`](./NuMetal-Q/NuCluster/ClusterSession.swift) stamp outgoing fragments with `Date()`.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuCluster/ClusterSession.swift:229`](./NuMetal-Q/NuCluster/ClusterSession.swift) tracks replays only in actor memory keyed by `fragmentID`.
-- [`/Users/home/NuMetal-Q/NuMetal-Q/NuCluster/ClusterSession.swift:396`](./NuMetal-Q/NuCluster/ClusterSession.swift) passes the timestamp into attestation context, but the session itself never checks an age window.
-- By contrast, [`/Users/home/NuMetal-Q/NuMetal-Q/NuVault/SyncProtocol.swift:369`](./NuMetal-Q/NuVault/SyncProtocol.swift) explicitly validates timestamp freshness and [`/Users/home/NuMetal-Q/NuMetal-Q/NuVault/SyncProtocol.swift:382`](./NuMetal-Q/NuVault/SyncProtocol.swift) uses a replay cache.
+- `NuMetal-Q/NuVault/NuPolicy.swift:39-40` says policy is enforced at every boundary, including vault persistence.
+- `NuMetal-Q/NuSDK/MetalFoldProver.swift:75-77` and `NuMetal-Q/NuSDK/MetalFoldProver.swift:129-131` immediately store typed states in `FoldVault`.
+- `NuMetal-Q/NuSDK/MetalFoldProver.swift:229-245` hardcodes `maxWitnessClass: .public` when materializing those states.
+- `NuMetal-Q/NuFold/FoldState.swift:27-28` and `NuMetal-Q/NuFold/FoldState.swift:244-249` show `typedTrace` binds the full lowered witness for every DAG node.
+- `NuMetal-Q/NuVault/FoldVault.swift:283-287` persists that optional `typedTrace` payload inside the vault record.
 
 Why this matters:
 
-- `ClusterSession` relies on ephemeral in-memory maps only.
-- A restarted co-prover can accept an old signed fragment as the first fragment of a new session binding, because there is no timestamp window and no persisted replay state.
-- Since attestation validation is delegated to an external verifier, the transport layer itself does not enforce freshness.
+- `ProofContext` rejects persistence of `.ephemeralDerived` material before sealing, but the separate public `MetalFoldProver` path has no equivalent policy gate.
+- Hardcoding `.public` also destroys provenance once the state is serialized, so later consumers cannot recover how sensitive the original witness material was.
 
 ## Low Findings
 
-### 5. The cSHAKE wrapper returns silently on allocation failure, leaving the caller with an all-zero digest buffer
+### 5. The cSHAKE wrapper still fails open on allocation failure and returns an all-zero digest buffer
 
-Impact: under memory pressure, transcript and digest derivation can fail open instead of surfacing an error.
+Impact: under memory pressure, transcript and digest derivation can silently degrade to zero bytes instead of surfacing an error.
 
 Evidence:
 
-- [`/Users/home/NuMetal-Q/SealXOF/keccak_xof.c:242`](./SealXOF/keccak_xof.c) returns early if `combined`, `encoded_name`, or `encoded_custom` allocation fails.
-- [`/Users/home/NuMetal-Q/SealXOF/keccak_xof.c:252`](./SealXOF/keccak_xof.c) returns early if `bytepad` allocation fails.
-- [`/Users/home/NuMetal-Q/SealXOF/keccak_xof.c:262`](./SealXOF/keccak_xof.c) returns early if `message` allocation fails.
+- `SealXOF/keccak_xof.c:242-268` returns early if any intermediate allocation fails.
+- `NuMetal-Q/NuField/Transcript.swift:275-286` preinitializes the output buffer with zeros before calling the C shim and receives no error signal.
 
 Why this matters:
 
-- The Swift wrapper preallocates an output array with zeros and does not receive an error signal from the C API.
-- Any early return therefore produces a deterministic zero digest instead of failing the cryptographic operation.
+- The Swift caller cannot distinguish “valid digest of zero bytes” from “digest computation aborted”.
+- This is low-probability, but cryptographic failure should be fail-closed.
 
-## Testing Gaps
+## Residual Risks And Gaps
 
-- The existing tests cover tampering and some envelope/vault invariants, but I did not find coverage for recursive folds where child accumulators already carry non-empty `errorTerms`.
-- I did not find coverage for the zero-digest GPU artifact path, default-library divergence, or cluster replay across process restarts.
-
+- `NuMetal-Q/NuField/NuProfile.swift:465-472` explicitly sets both minimum security-bit gates to `0`, so the profile certificate does not enforce any quantitative release threshold. That is a governance risk rather than a code bug, but it means security claims remain informational unless backed by external review.
+- The seal transcript’s `challengeScalar` path in `NuMetal-Q/NuField/Transcript.swift:48-50` reduces a single 64-bit word modulo `Fq`, unlike the 128-bit reduction used by `NuTranscriptField`. I did not elevate this to a formal finding because the larger structural issues above dominate, but it is still weaker challenge derivation than the rest of the codebase uses.
+- I did not find tests covering any strict attestation verifier across both sides of sync or cluster flows, nor tests asserting that public seal verification rejects tampering of `finalAccumulatorCommitment`, `relaxationFactor`, or `errorTerms`.

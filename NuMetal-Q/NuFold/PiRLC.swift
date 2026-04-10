@@ -115,8 +115,10 @@ public struct PiRLC: Sendable {
             NuSampler.challengeRingFromC(transcript: &transcript)
         }
 
-        // Scalar projections of ring challenges for public-input folding
-        let scalarChallenges: [Fq] = ringChallenges.map { $0.coeffs[0] }
+        let scalarChallenges = deriveScalarChallenges(
+            transcript: &transcript,
+            count: k
+        )
 
         // Fold: linear combination with ring challenges
         let witnessLen = inputs[0].witness.count
@@ -203,7 +205,10 @@ public struct PiRLC: Sendable {
         let ringChallenges: [RingElement] = (0..<k).map { _ in
             NuSampler.challengeRingFromC(transcript: &transcript)
         }
-        let scalarChallenges: [Fq] = ringChallenges.map { $0.coeffs[0] }
+        let scalarChallenges = deriveScalarChallenges(
+            transcript: &transcript,
+            count: k
+        )
 
         let witnessLen = inputs[0].witness.count
         var foldedWitness = [RingElement](repeating: .zero, count: witnessLen)
@@ -275,7 +280,16 @@ public struct PiRLC: Sendable {
         }
         guard ringChallenges == output.ringChallenges else { return false }
 
-        let expected = fold(inputs: inputs, crossTerms: crossTerms, ringChallenges: ringChallenges)
+        let scalarChallenges = deriveScalarChallenges(
+            transcript: &transcript,
+            count: k
+        )
+        let expected = fold(
+            inputs: inputs,
+            crossTerms: crossTerms,
+            ringChallenges: ringChallenges,
+            scalarChallenges: scalarChallenges
+        )
         return output.foldedCommitment == expected.foldedCommitment
             && output.foldedWitness == expected.foldedWitness
             && output.foldedPublicInputs == expected.foldedPublicInputs
@@ -342,7 +356,10 @@ public struct PiRLC: Sendable {
         }
         guard ringChallenges == output.ringChallenges else { return false }
 
-        let scalarChallenges = ringChallenges.map { $0.coeffs[0] }
+        let scalarChallenges = deriveScalarChallenges(
+            transcript: &transcript,
+            count: k
+        )
         let foldedWitness = try AG64RingMetal.bindFold(
             context: context,
             challengeRings: ringChallenges,
@@ -498,7 +515,8 @@ public struct PiRLC: Sendable {
     private static func fold(
         inputs: [Input],
         crossTerms: [[RingElement]],
-        ringChallenges: [RingElement]
+        ringChallenges: [RingElement],
+        scalarChallenges: [Fq]
     ) -> (
         foldedCommitment: AjtaiCommitment,
         foldedWitness: [RingElement],
@@ -513,7 +531,6 @@ public struct PiRLC: Sendable {
         var foldedPI = [Fq](repeating: .zero, count: inputs[0].publicInputs.count)
         var foldedEvaluations = [Fq](repeating: .zero, count: inputs[0].ccsEvaluations.count)
         var foldedU = Fq.zero
-        let scalarChallenges = ringChallenges.map { $0.coeffs[0] }
 
         for i in 0..<inputs.count {
             let rho = ringChallenges[i]
@@ -543,6 +560,15 @@ public struct PiRLC: Sendable {
                 ringChallenges: ringChallenges
             )
         )
+    }
+
+    private static func deriveScalarChallenges(
+        transcript: inout NuTranscriptField,
+        count: Int
+    ) -> [Fq] {
+        // Field-valued claims need full-field Fiat-Shamir challenges rather than
+        // a 2-bit projection of the weak ring-fold challenge set.
+        transcript.challengeVector(domain: "PiRLC.scalar_fold", count: count)
     }
 
     private static func foldErrorTerms(
