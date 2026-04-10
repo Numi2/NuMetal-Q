@@ -715,10 +715,6 @@ The Metal side mirrors the same math:
   - multilinear bind step `(1-r)e0 + r e1`
 - `NuDecompKernels.metal`
   - centered digit extraction for power-of-two decomposition bases
-- `NuSealKernels.metal`
-  - repeated-table oracle extension
-  - Merkle leaf hashing `SHA256(0x00 || leaf)`
-  - Merkle parent hashing `SHA256(left || right)`
 
 ## 16. File Map
 
@@ -748,4 +744,3 @@ The main math-bearing files are:
 - `NuMetal-Q/NuMetal/Shaders/NuMatrixKernels.metal`
 - `NuMetal-Q/NuMetal/Shaders/NuSumCheckKernels.metal`
 - `NuMetal-Q/NuMetal/Shaders/NuDecompKernels.metal`
-- `NuMetal-Q/NuMetal/Shaders/NuSealKernels.metal`

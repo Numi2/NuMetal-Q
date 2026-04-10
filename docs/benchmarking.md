@@ -1,6 +1,6 @@
 # Benchmarking Guide
 
-`NuMetalQBenchmarks` is the package's executable benchmark runner for seal workflows, PCS kernels, and verifier stages.
+`NuMetalQBenchmarks` is the package's executable benchmark runner for seal workflows and verifier stages.
 
 ## Quick Start
 
@@ -8,7 +8,7 @@
 swift run NuMetalQBenchmarks
 swift run NuMetalQBenchmarks --iterations 1 --warmups 0
 swift run NuMetalQBenchmarks --list-workloads
-swift run NuMetalQBenchmarks --seal-workload auth-policy-sparse --pcs-workload pcs-8
+swift run NuMetalQBenchmarks --seal-workload auth-policy-sparse
 ```
 
 By default the runner writes artifacts under `artifacts/benchmarks/<timestamp>/`.
@@ -28,7 +28,6 @@ Each benchmark run emits:
 Use the suite-specific selectors to narrow a run:
 
 - `--seal-workload NAME`
-- `--pcs-workload NAME`
 - `--verifier-workload NAME`
 
 Each selector can be repeated or given a comma-separated list.

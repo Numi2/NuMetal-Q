@@ -15,15 +15,13 @@ The quartic decider field is mathematically natural here because `X^64 + 1`
 splits over `Fq` into irreducible quartics, so `Fq4` is the smallest extension
 where the negacyclic ring polynomial splits completely.
 
-The terminal opening backend is mode-split by packed oracle size. In code this
-backend is named `HachiPCSBackend`, but the general path is not presented as a
-standalone low-degree PCS theorem:
+The terminal opening backend is direct-packed only. In code this backend is
+named `HachiPCSBackend`:
 
-- masked multilinear oracles with `packedChunkCount ∈ {1,2,4}` use the
-  direct-packed relation-opening path,
+- every packed multilinear oracle uses the same direct-packed relation-opening path,
 - the direct-packed path proves the chunk-local short linear witness relation
   with hiding accumulator commitments and a residual masked opening,
-- larger packed tables stay on the general Hachi codeword and Merkle path.
+- legacy codeword/Merkle openings are not part of the vNext verifier surface.
 
 The public API model:
 

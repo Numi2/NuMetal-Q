@@ -2,9 +2,6 @@
 // SuperNeo folding grows the witness norm at each fold step.
 // The norm budget tracks accumulated growth and determines when
 // decomposition (PiDEC) is needed to re-normalize.
-//
-// Physical execution must be k-ary and norm-budget aware because
-// SuperNeo provides multi-folding to amortize decomposition costs.
 
 /// Tracks the accumulated scheduler estimate of a folded witness.
 ///
@@ -48,7 +45,7 @@ public struct NormBudget: Sendable {
         foldsSinceDecomp >= decompositionInterval
     }
 
-    /// Update the scheduler proxy after a k-ary fold with given challenge magnitude.
+    /// Update the scheduler proxy after a fold step with given challenge magnitude.
     public mutating func recordFold(arity k: Int, challengeMagnitude: UInt64) {
         let arity = UInt64(max(1, k))
         let scaledNorm = currentNorm.multipliedReportingOverflow(by: arity)

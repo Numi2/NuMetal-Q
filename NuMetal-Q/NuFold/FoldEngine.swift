@@ -2,8 +2,8 @@ import Foundation
 
 // MARK: - Fold Engine
 // Orchestrates the three-stage SuperNeo folding pipeline.
-// k-ary folding with norm-budget-aware decomposition scheduling.
-// Logical API: like seed + binary fuse.
+// Binary folding with norm-budget-aware decomposition scheduling.
+// Logical API: seed + binary fuse.
 // Physical execution: PiCCS → PiRLC → PiDEC as needed.
 //
 // Stage order (SuperNeo paper):
@@ -13,7 +13,7 @@ import Foundation
 
 /// Configuration for the fold engine.
 public struct FoldConfig: Sendable {
-    /// Maximum fold arity (k). Higher = more amortization, higher norm growth.
+    /// Maximum internal batch size for staged binary reduction.
     public let maxArity: Int
 
     /// Decomposition base b.
@@ -33,7 +33,7 @@ public struct FoldConfig: Sendable {
 
     /// Canonical configuration for AG64-SNQ-129-A.
     public static let canonical = FoldConfig(
-        maxArity: 8,
+        maxArity: 2,
         decompBase: NuProfile.canonical.decompBase,
         decompLimbs: NuProfile.canonical.decompLimbs,
         normBound: NuProfile.canonical.normBound,
@@ -61,7 +61,7 @@ public struct FoldConfig: Sendable {
 /// The fold engine orchestrates SuperNeo's three-stage protocol.
 ///
 /// Usage:
-/// 1. Create a seed state via `seed(shape:witness:publicInputs:)`
+/// 1. Create a seed state via `seed(shape:witness:publicInputs:publicHeader:)`
 /// 2. Fold states together via `fold(states:relation:)`
 /// 3. Seal a final state via `SealEngine`
 ///

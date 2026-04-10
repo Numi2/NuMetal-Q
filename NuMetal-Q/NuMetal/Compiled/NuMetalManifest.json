@@ -7,7 +7,6 @@
     "NuCommitKernels",
     "NuDecompKernels",
     "NuMatrixKernels",
-    "NuSumCheckKernels",
-    "NuSealKernels"
+    "NuSumCheckKernels"
   ]
 }

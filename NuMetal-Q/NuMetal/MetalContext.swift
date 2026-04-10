@@ -406,10 +406,6 @@ public enum KernelFamily: String, Sendable, Hashable, CaseIterable {
     case sumCheckPartial = "nu_sumcheck_partial"
     case piRLCFold = "nu_pirlc_fold"
     case piDECDecompose = "nu_pidec_decompose"
-    case sealEncode = "nu_seal_encode"
-    case sealQuery = "nu_seal_query"
-    case merkleHash = "nu_merkle_hash"
-    case merkleParent = "nu_merkle_parent"
 
     /// Metal function name for this kernel family.
     var functionName: String { rawValue }

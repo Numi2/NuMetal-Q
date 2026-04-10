@@ -11,7 +11,6 @@ internal enum MetalArtifactBundle {
         "NuDecompKernels",
         "NuMatrixKernels",
         "NuSumCheckKernels",
-        "NuSealKernels",
     ]
 
     static func combinedSource() throws -> String {

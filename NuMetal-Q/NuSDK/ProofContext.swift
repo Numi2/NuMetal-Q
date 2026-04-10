@@ -164,7 +164,7 @@ public actor ProofContext {
 
     // MARK: - Binary Fuse
 
-    /// Combine exactly two proofs into one ( binary fuse).
+    /// Combine exactly two proofs into one binary fold.
     ///
     /// Both input proofs must be for the same shape.
     /// The result is a new proof that attests to both inputs.
@@ -178,10 +178,10 @@ public actor ProofContext {
         return ProofHandle(chainID: fused.chainID, shapeDigest: compiledShape.shape.digest)
     }
 
-    /// Combine multiple proofs (k-ary fold, generalizes binary fuse).
+    /// Combine multiple proofs through a deterministic binary reduction tree.
     ///
-    /// `fuseMany` is a runtime optimization only; the public semantics
-    /// remain like binary fuse.
+    /// `fuseMany` preserves left-to-right semantics and repeatedly applies
+    /// the binary fold path used by `fuse`.
     public func fuseMany(_ handles: [ProofHandle]) async throws -> ProofHandle {
         guard handles.count >= 2 else { throw ProofContextError.insufficientInputs }
         let states = try handles.map { handle in

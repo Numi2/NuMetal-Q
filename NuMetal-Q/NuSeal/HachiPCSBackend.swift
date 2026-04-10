@@ -1,17 +1,12 @@
 import Foundation
-import CryptoKit
-import Metal
 
 internal struct HachiPCSBackend {
     let parameterBundle: HachiSealParameterBundle
-    let codewordBlowup: Int
 
     init(
-        parameterBundle: HachiSealParameterBundle = NuParams.derive(from: .canonical).seal,
-        codewordBlowup: Int = 4
+        parameterBundle: HachiSealParameterBundle = NuParams.derive(from: .canonical).seal
     ) {
         self.parameterBundle = parameterBundle
-        self.codewordBlowup = codewordBlowup
     }
 
     private var directPackedParameters: DirectPackedPoKParameters {
@@ -268,39 +263,14 @@ internal struct HachiPCSBackend {
         return true
     }
 
-    func compareCPUAndMetalArtifacts(
-        label: SpartanOracleID,
-        polynomial: MultilinearPoly,
-        context: MetalContext
-    ) throws -> [HachiPCSArtifactDiff] {
-        let cpuArtifact = try buildOracleArtifact(
-            label: label,
-            polynomial: polynomial,
-            context: nil,
-            traceCollector: nil
-        )
-        let metalArtifact = try buildOracleArtifact(
-            label: label,
-            polynomial: polynomial,
-            context: context,
-            traceCollector: nil
-        )
-        return diffArtifacts(
-            expected: cpuArtifact,
-            actual: metalArtifact
-        )
-    }
-
     private func buildOracleArtifact(
         label: SpartanOracleID,
         polynomial: MultilinearPoly,
         context: MetalContext?,
         traceCollector: MetalTraceCollector?
     ) throws -> HachiPCSOracleArtifact {
+        _ = traceCollector
         let packed = WitnessPacking.packFieldVectorToRings(polynomial.evals)
-        guard usesDirectPackedOpening(forPackedChunkCount: packed.count) else {
-            throw SpartanSealError.serializationFailure
-        }
         return try buildDirectPackedOracleArtifact(
             label: label,
             packedWitness: packed,
@@ -340,190 +310,8 @@ internal struct HachiPCSBackend {
                 packedChunkCount: UInt32(clamping: packedWitness.count),
                 statementDigest: statementDigest
             ),
-            codeword: [],
-            merkleLevels: [],
             directPackedWitnessMaterial: material
         )
-    }
-
-    private func buildOracleArtifactMetal(
-        label: SpartanOracleID,
-        polynomial: MultilinearPoly,
-        context: MetalContext,
-        traceCollector: MetalTraceCollector?
-    ) throws -> HachiPCSOracleArtifact {
-        let packed = WitnessPacking.packFieldVectorToRings(polynomial.evals)
-        guard usesDirectPackedOpening(forPackedChunkCount: packed.count) else {
-            throw SpartanSealError.serializationFailure
-        }
-        if traceCollector != nil {
-            _ = oracleTracePrefix(for: label)
-        }
-        return try buildDirectPackedOracleArtifact(
-            label: label,
-            packedWitness: packed,
-            valueCount: polynomial.evals.count,
-            context: context
-        )
-    }
-
-    private func buildCodeword(
-        polynomial: MultilinearPoly,
-        context: MetalContext?,
-        traceCollector: MetalTraceCollector?,
-        label: SpartanOracleID
-    ) throws -> [Fq] {
-        _ = traceCollector
-        _ = label
-        let base = polynomial.evals.isEmpty ? [Fq.zero] : polynomial.evals
-        let codewordLength = max(1, base.count * codewordBlowup)
-
-        guard let context else {
-            return (0..<codewordLength).map { base[$0 % base.count] }
-        }
-
-        return try autoreleasepool {
-            guard let evalBuffer = context.uploadFieldElements(base),
-                  let codewordBuffer = context.makeSharedBuffer(
-                    length: codewordLength * MemoryLayout<UInt32>.size * 2
-                  ) else {
-                throw NuMetalError.heapCreationFailed
-            }
-
-            let dispatcher = KernelDispatcher(context: context)
-            try dispatcher.dispatchSealEncode(
-                evalBuffer: evalBuffer,
-                codewordBuffer: codewordBuffer,
-                n: base.count,
-                blowup: codewordBlowup
-            )
-
-            let pointer = codewordBuffer.contents().bindMemory(to: UInt32.self, capacity: codewordLength * 2)
-            let packed = Array(UnsafeBufferPointer(start: pointer, count: codewordLength * 2))
-            return MetalFieldPacking.unpackFieldElementsSoA(packed, count: codewordLength)
-        }
-    }
-
-    private func buildMerkleLevels(
-        codeword: [Fq],
-        context: MetalContext?,
-        traceCollector: MetalTraceCollector?,
-        label: SpartanOracleID
-    ) throws -> [[[UInt8]]] {
-        _ = traceCollector
-        _ = label
-        guard let context else {
-            return cpuMerkleLevels(codeword: codeword)
-        }
-
-        let codewordLength = max(1, codeword.count)
-        var levels = [[[UInt8]]]()
-        var currentLevel = try autoreleasepool { () throws -> [[UInt8]] in
-            guard let codewordBuffer = context.uploadFieldElements(codeword),
-                  let leafBuffer = context.makeSharedBuffer(length: codewordLength * 32) else {
-                throw NuMetalError.heapCreationFailed
-            }
-
-            let dispatcher = KernelDispatcher(context: context)
-            try dispatcher.dispatchMerkleHash(
-                leavesBuffer: codewordBuffer,
-                nodesBuffer: leafBuffer,
-                numLeaves: codewordLength
-            )
-
-            return readHashLevel(from: leafBuffer, count: codewordLength)
-        }
-        levels.append(currentLevel)
-
-        while currentLevel.count > 1 {
-            if currentLevel.count % 2 != 0, let last = currentLevel.last {
-                currentLevel.append(last)
-            }
-            let parentCount = currentLevel.count / 2
-            currentLevel = try autoreleasepool { () throws -> [[UInt8]] in
-                guard let childBuffer = context.makeSharedBuffer(length: currentLevel.count * 32),
-                      let parentBuffer = context.makeSharedBuffer(length: parentCount * 32) else {
-                    throw NuMetalError.heapCreationFailed
-                }
-                writeHashLevel(currentLevel, to: childBuffer)
-                let dispatcher = KernelDispatcher(context: context)
-                try dispatcher.dispatchMerkleParent(
-                    childBuffer: childBuffer,
-                    parentBuffer: parentBuffer,
-                    numParents: parentCount
-                )
-                return readHashLevel(from: parentBuffer, count: parentCount)
-            }
-            levels.append(currentLevel)
-        }
-
-        return levels
-    }
-
-    private func cpuMerkleLevels(codeword: [Fq]) -> [[[UInt8]]] {
-        var levels = [codeword.map(leafHash)]
-        var current = levels[0]
-        while current.count > 1 {
-            if current.count % 2 != 0, let last = current.last {
-                current.append(last)
-            }
-            current = stride(from: 0, to: current.count, by: 2).map {
-                parentHash(left: current[$0], right: current[$0 + 1])
-            }
-            levels.append(current)
-        }
-        return levels
-    }
-
-    private func readHashLevel(from buffer: MTLBuffer, count: Int) -> [[UInt8]] {
-        let pointer = buffer.contents().bindMemory(to: UInt32.self, capacity: count * 8)
-        return (0..<count).map { hashIndex in
-            var bytes = [UInt8]()
-            bytes.reserveCapacity(32)
-            let base = hashIndex * 8
-            for wordOffset in 0..<8 {
-                let word = pointer[base + wordOffset].bigEndian
-                withUnsafeBytes(of: word) { bytes.append(contentsOf: $0) }
-            }
-            return bytes
-        }
-    }
-
-    private func writeHashLevel(_ hashes: [[UInt8]], to buffer: MTLBuffer) {
-        let pointer = buffer.contents().bindMemory(to: UInt32.self, capacity: hashes.count * 8)
-        for (hashIndex, hash) in hashes.enumerated() {
-            precondition(hash.count == 32)
-            for wordOffset in 0..<8 {
-                let start = wordOffset * 4
-                let word = hash[start..<(start + 4)].withUnsafeBytes { raw -> UInt32 in
-                    raw.load(as: UInt32.self).bigEndian
-                }
-                pointer[hashIndex * 8 + wordOffset] = word
-            }
-        }
-    }
-
-    private func leafHash(_ value: Fq) -> [UInt8] {
-        let payload = Data([0x00] + value.toBytes())
-        return Array(SHA256.hash(data: payload))
-    }
-
-    private func parentHash(left: [UInt8], right: [UInt8]) -> [UInt8] {
-        Array(SHA256.hash(data: Data(left + right)))
-    }
-
-    private func queryIndex(
-        point: [Fq],
-        oracle: SpartanOracleID,
-        codewordLength: Int
-    ) -> Int {
-        precondition(codewordLength > 0)
-        let bytes = point.flatMap { $0.toBytes() } + Array(pointKey(oracle).utf8)
-        let digestBytes = digest(bytes, domain: "NuMeQ.Decider.Hachi.QueryIndex")
-        let value = digestBytes.prefix(8).enumerated().reduce(UInt64(0)) { partial, pair in
-            partial | (UInt64(pair.element) << (UInt64(pair.offset) * 8))
-        }
-        return Int(value % UInt64(codewordLength))
     }
 
     func scheduleDigest(
@@ -553,13 +341,6 @@ internal struct HachiPCSBackend {
         )
     }
 
-    func tableDigest(_ polynomial: MultilinearPoly) -> [UInt8] {
-        digest(
-            polynomial.evals.flatMap { $0.toBytes() },
-            domain: "NuMeQ.Decider.Hachi.Table"
-        )
-    }
-
     private func digest(_ bytes: [UInt8], domain: String) -> [UInt8] {
         NuSealCShake256.cshake256(
             data: Data(bytes),
@@ -574,14 +355,6 @@ internal struct HachiPCSBackend {
 
     func pointKey(_ oracle: SpartanOracleID) -> String {
         "\(oracle.kind.rawValue):\(oracle.index ?? -1)"
-    }
-
-    private func oracleTracePrefix(for oracle: SpartanOracleID) -> String {
-        "seal.verify.oracle[\(pointKey(oracle))]"
-    }
-
-    private func usesDirectPackedOpening(forPackedChunkCount packedChunkCount: Int) -> Bool {
-        packedChunkCount > 0
     }
 
     private func makeDirectPackedOpening(
@@ -921,20 +694,5 @@ internal struct HachiPCSBackend {
 
 private struct HachiPCSOracleArtifact {
     let commitment: HachiPCSCommitment
-    let codeword: [Fq]
-    let merkleLevels: [[[UInt8]]]
     let directPackedWitnessMaterial: DirectPackedWitnessMaterial?
-
-    func authenticationPath(for leafIndex: Int) -> [[UInt8]] {
-        guard merkleLevels.isEmpty == false else { return [] }
-        var index = leafIndex
-        var path = [[UInt8]]()
-        for level in merkleLevels.dropLast() {
-            let siblingIndex = index ^ 1
-            let safeIndex = siblingIndex < level.count ? siblingIndex : index
-            path.append(level[safeIndex])
-            index /= 2
-        }
-        return path
-    }
 }

@@ -41,7 +41,6 @@ enum NuMetalQBenchmarks {
             metadata: metadata,
             configuration: configuration,
             initialSealWorkloads: sealScaffolds.map { pendingSealResult(for: $0.workload, configuration: configuration) },
-            initialPCSWorkloads: options.pcsWorkloads.map { pendingPCSResult(for: $0, configuration: configuration) },
             initialVerifierWorkloads: options.verifierWorkloads.map {
                 pendingVerifierResult(for: $0, configuration: configuration)
             }
@@ -53,7 +52,6 @@ enum NuMetalQBenchmarks {
                 sealScaffolds: sealScaffolds,
                 artifactWriter: artifactWriter
             )
-            _ = try await benchmarkPCSKernels(options: options, artifactWriter: artifactWriter)
             _ = try await benchmarkVerifierStages(options: options, artifactWriter: artifactWriter)
             let completedReport = try await artifactWriter.markCompleted()
 
@@ -407,160 +405,6 @@ enum NuMetalQBenchmarks {
         }
     }
 
-    private static func benchmarkPCSKernels(
-        options: Options,
-        artifactWriter: BenchmarkArtifactWriter
-    ) async throws -> [PCSBenchmarkResult] {
-        let metalContext = try? MetalContext()
-        let expectedIterations = options.warmups + options.iterations
-
-        return try await Array(options.pcsWorkloads.enumerated()).mapAsync { workloadIndex, workload in
-            let evals = samplePCSEvaluations(numVars: workload.numVars)
-            let codewordLength = evals.count * 4
-            let positions = samplePCSQueryPositions(codewordLength: codewordLength)
-            let note = metalContext == nil
-                ? "Commit measures codeword extension plus Merkle construction. Open measures codeword query gather. Metal timings unavailable on this host."
-                : "Commit measures codeword extension plus Merkle construction. Open measures codeword query gather."
-
-            var cpuCommitSamples: [Double] = []
-            var cpuOpenSamples: [Double] = []
-            var metalCommitSamples: [Double] = []
-            var metalOpenSamples: [Double] = []
-            var metalCommitGPUSamples: [Double] = []
-            var metalOpenGPUSamples: [Double] = []
-            var metalCommitThreadgroupWidths = Set<Int>()
-            var metalOpenThreadgroupWidths = Set<Int>()
-            var metalCommitCountersCaptured = true
-            var metalOpenCountersCaptured = true
-            var peakRSSBytes = peakResidentSetSizeBytes()
-            let counterSamplingAvailable = metalContext?.dispatchCounterSamplingSupported ?? false
-
-            try await artifactWriter.updatePCS(
-                PCSBenchmarkResult(
-                    workload: workload,
-                    status: .running,
-                    completedIterations: 0,
-                    expectedIterations: expectedIterations,
-                    completedSamples: 0,
-                    expectedSamples: options.iterations,
-                    peakRSSBytes: peakRSSBytes,
-                    cpuCommit: nil,
-                    cpuOpen: nil,
-                    metalCommit: nil,
-                    metalOpen: nil,
-                    metalCommitGPU: nil,
-                    metalOpenGPU: nil,
-                    metalCommitThreadgroupWidths: [],
-                    metalOpenThreadgroupWidths: [],
-                    counterSamplingAvailable: counterSamplingAvailable,
-                    metalCommitCountersCaptured: false,
-                    metalOpenCountersCaptured: false,
-                    gpuFamilyTag: metalContext?.gpuFamilyTag ?? "unavailable",
-                    gpuName: metalContext?.device.name ?? "unavailable",
-                    note: note
-                ),
-                at: workloadIndex
-            )
-
-            for iteration in 0..<expectedIterations {
-                let cpuCommitStart = DispatchTime.now().uptimeNanoseconds
-                let cpuArtifact = buildCPUCommitArtifact(evals: evals, blowup: 4)
-                let cpuCommitElapsed = Double(
-                    DispatchTime.now().uptimeNanoseconds - cpuCommitStart
-                ) / 1_000_000.0
-
-                let cpuOpenStart = DispatchTime.now().uptimeNanoseconds
-                _ = gatherCPUQueryValues(codeword: cpuArtifact.codeword, positions: positions)
-                let cpuOpenElapsed = Double(
-                    DispatchTime.now().uptimeNanoseconds - cpuOpenStart
-                ) / 1_000_000.0
-
-                if let metalContext {
-                    let metalIteration = try benchmarkMetalPCSIteration(
-                        evals: evals,
-                        positions: positions,
-                        context: metalContext,
-                        blowup: 4
-                    )
-                    if iteration >= options.warmups {
-                        metalCommitSamples.append(metalIteration.commitCPU)
-                        metalOpenSamples.append(metalIteration.openCPU)
-                        if let commitGPU = metalIteration.commitGPU {
-                            metalCommitGPUSamples.append(commitGPU)
-                        }
-                        if let openGPU = metalIteration.openGPU {
-                            metalOpenGPUSamples.append(openGPU)
-                        }
-                    }
-                    metalCommitThreadgroupWidths.formUnion(metalIteration.commitThreadgroupWidths)
-                    metalOpenThreadgroupWidths.formUnion(metalIteration.openThreadgroupWidths)
-                    metalCommitCountersCaptured = metalCommitCountersCaptured && metalIteration.commitCounterSamplesCaptured
-                    metalOpenCountersCaptured = metalOpenCountersCaptured && metalIteration.openCounterSamplesCaptured
-                }
-
-                peakRSSBytes = max(peakRSSBytes, peakResidentSetSizeBytes())
-
-                if iteration >= options.warmups {
-                    cpuCommitSamples.append(cpuCommitElapsed)
-                    cpuOpenSamples.append(cpuOpenElapsed)
-                }
-
-                try await artifactWriter.updatePCS(
-                    makePCSResult(
-                        workload: workload,
-                        status: .running,
-                        completedIterations: iteration + 1,
-                        expectedIterations: expectedIterations,
-                        completedSamples: max(0, iteration + 1 - options.warmups),
-                        expectedSamples: options.iterations,
-                        peakRSSBytes: peakRSSBytes,
-                        cpuCommitSamples: cpuCommitSamples,
-                        cpuOpenSamples: cpuOpenSamples,
-                        metalCommitSamples: metalCommitSamples,
-                        metalOpenSamples: metalOpenSamples,
-                        metalCommitGPUSamples: metalCommitGPUSamples,
-                        metalOpenGPUSamples: metalOpenGPUSamples,
-                        metalCommitThreadgroupWidths: metalCommitThreadgroupWidths.sorted(),
-                        metalOpenThreadgroupWidths: metalOpenThreadgroupWidths.sorted(),
-                        counterSamplingAvailable: counterSamplingAvailable,
-                        metalCommitCountersCaptured: counterSamplingAvailable && metalCommitCountersCaptured,
-                        metalOpenCountersCaptured: counterSamplingAvailable && metalOpenCountersCaptured,
-                        gpuFamilyTag: metalContext?.gpuFamilyTag ?? "unavailable",
-                        gpuName: metalContext?.device.name ?? "unavailable",
-                        note: note
-                    ),
-                    at: workloadIndex
-                )
-            }
-
-            let finalResult = makePCSResult(
-                workload: workload,
-                status: .completed,
-                completedIterations: expectedIterations,
-                expectedIterations: expectedIterations,
-                completedSamples: options.iterations,
-                expectedSamples: options.iterations,
-                peakRSSBytes: peakRSSBytes,
-                cpuCommitSamples: cpuCommitSamples,
-                cpuOpenSamples: cpuOpenSamples,
-                metalCommitSamples: metalCommitSamples,
-                metalOpenSamples: metalOpenSamples,
-                metalCommitGPUSamples: metalCommitGPUSamples,
-                metalOpenGPUSamples: metalOpenGPUSamples,
-                metalCommitThreadgroupWidths: metalCommitThreadgroupWidths.sorted(),
-                metalOpenThreadgroupWidths: metalOpenThreadgroupWidths.sorted(),
-                counterSamplingAvailable: counterSamplingAvailable,
-                metalCommitCountersCaptured: counterSamplingAvailable && metalCommitCountersCaptured,
-                metalOpenCountersCaptured: counterSamplingAvailable && metalOpenCountersCaptured,
-                gpuFamilyTag: metalContext?.gpuFamilyTag ?? "unavailable",
-                gpuName: metalContext?.device.name ?? "unavailable",
-                note: note
-            )
-            try await artifactWriter.updatePCS(finalResult, at: workloadIndex)
-            return finalResult
-        }
-    }
-
     private static func benchmarkVerifierStages(
         options: Options,
         artifactWriter: BenchmarkArtifactWriter
@@ -887,16 +731,6 @@ enum NuMetalQBenchmarks {
             )
         }
         lines.append("")
-        lines.append("## PCS Status")
-        lines.append("")
-        lines.append("| Workload | State | Progress | Vars | Evals | Peak RSS | GPU | CPU Commit p50/p95 | CPU Open p50/p95 | Metal Commit p50/p95 | Metal Open p50/p95 | Metal Commit GPU p50/p95 | Metal Open GPU p50/p95 | Commit TG Widths | Open TG Widths | Counters | Note |")
-        lines.append("| --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
-        for result in report.pcsWorkloads {
-            lines.append(
-                "| \(result.workload.name) | \(result.status.rawValue) | \(result.completedIterations)/\(result.expectedIterations) iters, \(result.completedSamples)/\(result.expectedSamples) samples | \(result.workload.numVars) | \(1 << result.workload.numVars) | \(result.peakRSSBytes) | \(result.gpuFamilyTag) | \(formatPair(result.cpuCommit)) | \(formatPair(result.cpuOpen)) | \(formatPair(result.metalCommit)) | \(formatPair(result.metalOpen)) | \(formatPair(result.metalCommitGPU)) | \(formatPair(result.metalOpenGPU)) | \(formatWidths(result.metalCommitThreadgroupWidths)) | \(formatWidths(result.metalOpenThreadgroupWidths)) | \(formatCounterStatus(available: result.counterSamplingAvailable, captured: result.metalCommitCountersCaptured && result.metalOpenCountersCaptured)) | \(result.note ?? "") |"
-            )
-        }
-        lines.append("")
         lines.append("## Verifier Stages")
         lines.append("")
         lines.append("| Workload | Stage | State | Progress | Peak RSS | GPU | CPU Verify p50/p95 | Assisted Verify p50/p95 | Assisted GPU p50/p95 | Dispatches | Counters | Trace | Note |")
@@ -951,35 +785,6 @@ enum NuMetalQBenchmarks {
             dispatchTracePath: nil,
             parityNote: nil,
             fuseFailure: nil
-        )
-    }
-
-    private static func pendingPCSResult(
-        for workload: PCSWorkload,
-        configuration: BenchmarkConfiguration
-    ) -> PCSBenchmarkResult {
-        PCSBenchmarkResult(
-            workload: workload,
-            status: .pending,
-            completedIterations: 0,
-            expectedIterations: configuration.iterations + configuration.warmups,
-            completedSamples: 0,
-            expectedSamples: configuration.iterations,
-            peakRSSBytes: 0,
-            cpuCommit: nil,
-            cpuOpen: nil,
-            metalCommit: nil,
-            metalOpen: nil,
-            metalCommitGPU: nil,
-            metalOpenGPU: nil,
-            metalCommitThreadgroupWidths: [],
-            metalOpenThreadgroupWidths: [],
-            counterSamplingAvailable: false,
-            metalCommitCountersCaptured: false,
-            metalOpenCountersCaptured: false,
-            gpuFamilyTag: "unavailable",
-            gpuName: "unavailable",
-            note: nil
         )
     }
 
@@ -1063,54 +868,6 @@ enum NuMetalQBenchmarks {
         )
     }
 
-    private static func makePCSResult(
-        workload: PCSWorkload,
-        status: BenchmarkEntryStatus,
-        completedIterations: Int,
-        expectedIterations: Int,
-        completedSamples: Int,
-        expectedSamples: Int,
-        peakRSSBytes: UInt64,
-        cpuCommitSamples: [Double],
-        cpuOpenSamples: [Double],
-        metalCommitSamples: [Double],
-        metalOpenSamples: [Double],
-        metalCommitGPUSamples: [Double],
-        metalOpenGPUSamples: [Double],
-        metalCommitThreadgroupWidths: [Int],
-        metalOpenThreadgroupWidths: [Int],
-        counterSamplingAvailable: Bool,
-        metalCommitCountersCaptured: Bool,
-        metalOpenCountersCaptured: Bool,
-        gpuFamilyTag: String,
-        gpuName: String,
-        note: String?
-    ) -> PCSBenchmarkResult {
-        PCSBenchmarkResult(
-            workload: workload,
-            status: status,
-            completedIterations: completedIterations,
-            expectedIterations: expectedIterations,
-            completedSamples: completedSamples,
-            expectedSamples: expectedSamples,
-            peakRSSBytes: peakRSSBytes,
-            cpuCommit: cpuCommitSamples.isEmpty ? nil : summarize(cpuCommitSamples),
-            cpuOpen: cpuOpenSamples.isEmpty ? nil : summarize(cpuOpenSamples),
-            metalCommit: metalCommitSamples.isEmpty ? nil : summarize(metalCommitSamples),
-            metalOpen: metalOpenSamples.isEmpty ? nil : summarize(metalOpenSamples),
-            metalCommitGPU: metalCommitGPUSamples.isEmpty ? nil : summarize(metalCommitGPUSamples),
-            metalOpenGPU: metalOpenGPUSamples.isEmpty ? nil : summarize(metalOpenGPUSamples),
-            metalCommitThreadgroupWidths: metalCommitThreadgroupWidths,
-            metalOpenThreadgroupWidths: metalOpenThreadgroupWidths,
-            counterSamplingAvailable: counterSamplingAvailable,
-            metalCommitCountersCaptured: metalCommitCountersCaptured,
-            metalOpenCountersCaptured: metalOpenCountersCaptured,
-            gpuFamilyTag: gpuFamilyTag,
-            gpuName: gpuName,
-            note: note
-        )
-    }
-
     private static func makeVerifierResult(
         workload: VerifierWorkload,
         status: BenchmarkEntryStatus,
@@ -1150,191 +907,6 @@ enum NuMetalQBenchmarks {
             gpuName: gpuName,
             note: note
         )
-    }
-
-    private static func samplePCSEvaluations(numVars: Int) -> [Fq] {
-        let count = 1 << numVars
-        var evaluations = [Fq]()
-        evaluations.reserveCapacity(count)
-        for index in 0..<count {
-            let sample = (index * 37 + numVars * 19 + 5) % 65521
-            evaluations.append(Fq(UInt64(sample)))
-        }
-        return evaluations
-    }
-
-    private static func samplePCSQueryPositions(codewordLength: Int) -> [UInt32] {
-        let queryCount = max(8, min(64, max(1, codewordLength / 8)))
-        return (0..<queryCount).map { index in
-            UInt32((index * 17 + 3) % max(1, codewordLength))
-        }
-    }
-
-    private static func buildCPUCommitArtifact(
-        evals: [Fq],
-        blowup: Int
-    ) -> PCSCPUCommitArtifact {
-        let base = evals.isEmpty ? [Fq.zero] : evals
-        let codeword = (0..<(base.count * blowup)).map { base[$0 % base.count] }
-        let merkleLevels = buildCPUMerkleLevels(codeword: codeword)
-        return PCSCPUCommitArtifact(codeword: codeword, merkleLevels: merkleLevels)
-    }
-
-    private static func buildCPUMerkleLevels(codeword: [Fq]) -> [[[UInt8]]] {
-        var levels = [codeword.map(cpuPCSLeafHash)]
-        var current = levels[0]
-        while current.count > 1 {
-            if current.count % 2 != 0, let last = current.last {
-                current.append(last)
-            }
-            current = stride(from: 0, to: current.count, by: 2).map { index in
-                cpuPCSParentHash(left: current[index], right: current[index + 1])
-            }
-            levels.append(current)
-        }
-        return levels
-    }
-
-    private static func cpuPCSLeafHash(_ value: Fq) -> [UInt8] {
-        Array(SHA256.hash(data: Data([0x00] + value.toBytes())))
-    }
-
-    private static func cpuPCSParentHash(left: [UInt8], right: [UInt8]) -> [UInt8] {
-        Array(SHA256.hash(data: Data(left + right)))
-    }
-
-    private static func gatherCPUQueryValues(
-        codeword: [Fq],
-        positions: [UInt32]
-    ) -> [Fq] {
-        positions.map { codeword[Int($0)] }
-    }
-
-    private static func benchmarkMetalPCSIteration(
-        evals: [Fq],
-        positions: [UInt32],
-        context: MetalContext,
-        blowup: Int
-    ) throws -> PCSMetalIteration {
-        try autoreleasepool {
-            let codewordLength = max(1, evals.count * blowup)
-            guard let evalBuffer = context.uploadFieldElements(evals),
-                  let codewordBuffer = context.makeSharedBuffer(
-                    length: codewordLength * MemoryLayout<UInt32>.size * 2
-                  ),
-                  let leafBuffer = context.makeSharedBuffer(length: codewordLength * 32),
-                  let positionsBuffer = context.makeSharedBuffer(
-                    length: positions.count * MemoryLayout<UInt32>.size
-                  ),
-                  let outputBuffer = context.makeSharedBuffer(
-                    length: positions.count * MemoryLayout<UInt32>.size * 2
-                  ) else {
-                throw BenchmarkError.invalidWorkload("pcs-metal-allocation")
-            }
-
-            let positionsPointer = positionsBuffer.contents().bindMemory(
-                to: UInt32.self,
-                capacity: positions.count
-            )
-            for (index, value) in positions.enumerated() {
-                positionsPointer[index] = value
-            }
-
-            let dispatcher = KernelDispatcher(context: context)
-            let encodeTiming = try dispatcher.dispatchSealEncodeTimed(
-                evalBuffer: evalBuffer,
-                codewordBuffer: codewordBuffer,
-                n: evals.count,
-                blowup: blowup
-            )
-            let leafTiming = try dispatcher.dispatchMerkleHashTimed(
-                leavesBuffer: codewordBuffer,
-                nodesBuffer: leafBuffer,
-                numLeaves: codewordLength
-            )
-
-            var commitCPU = encodeTiming.cpuMilliseconds + leafTiming.cpuMilliseconds
-            var commitGPU = sumGPU(encodeTiming.gpuMilliseconds, leafTiming.gpuMilliseconds)
-            var commitThreadgroupWidths = Set([encodeTiming.threadgroupWidth, leafTiming.threadgroupWidth])
-            var commitCountersCaptured = encodeTiming.counterSampleCaptured && leafTiming.counterSampleCaptured
-            var currentLevel = readPCSHashes(from: leafBuffer, count: codewordLength)
-            while currentLevel.count > 1 {
-                if currentLevel.count % 2 != 0, let last = currentLevel.last {
-                    currentLevel.append(last)
-                }
-                let parentCount = currentLevel.count / 2
-                guard let childBuffer = context.makeSharedBuffer(length: currentLevel.count * 32),
-                      let parentBuffer = context.makeSharedBuffer(length: parentCount * 32) else {
-                    throw BenchmarkError.invalidWorkload("pcs-metal-merkle-parent")
-                }
-                writePCSHashes(currentLevel, to: childBuffer)
-                let parentTiming = try dispatcher.dispatchMerkleParentTimed(
-                    childBuffer: childBuffer,
-                    parentBuffer: parentBuffer,
-                    numParents: parentCount
-                )
-                commitCPU += parentTiming.cpuMilliseconds
-                commitGPU = sumGPU(commitGPU, parentTiming.gpuMilliseconds)
-                commitThreadgroupWidths.insert(parentTiming.threadgroupWidth)
-                commitCountersCaptured = commitCountersCaptured && parentTiming.counterSampleCaptured
-                currentLevel = readPCSHashes(from: parentBuffer, count: parentCount)
-            }
-
-            let queryTiming = try dispatcher.dispatchSealQueryTimed(
-                codewordBuffer: codewordBuffer,
-                positionsBuffer: positionsBuffer,
-                outputBuffer: outputBuffer,
-                codewordLength: codewordLength,
-                numQueries: positions.count
-            )
-            let queryPointer = outputBuffer.contents().bindMemory(
-                to: UInt32.self,
-                capacity: positions.count * 2
-            )
-            _ = MetalFieldPacking.unpackFieldElementsSoA(
-                Array(UnsafeBufferPointer(start: queryPointer, count: positions.count * 2)),
-                count: positions.count
-            )
-
-            return PCSMetalIteration(
-                commitCPU: commitCPU,
-                openCPU: queryTiming.cpuMilliseconds,
-                commitGPU: commitGPU,
-                openGPU: queryTiming.gpuMilliseconds,
-                commitThreadgroupWidths: commitThreadgroupWidths.sorted(),
-                openThreadgroupWidths: [queryTiming.threadgroupWidth],
-                commitCounterSamplesCaptured: commitCountersCaptured,
-                openCounterSamplesCaptured: queryTiming.counterSampleCaptured
-            )
-        }
-    }
-
-    private static func readPCSHashes(from buffer: MTLBuffer, count: Int) -> [[UInt8]] {
-        let pointer = buffer.contents().bindMemory(to: UInt32.self, capacity: count * 8)
-        return (0..<count).map { hashIndex in
-            var bytes = [UInt8]()
-            bytes.reserveCapacity(32)
-            let base = hashIndex * 8
-            for wordOffset in 0..<8 {
-                let word = pointer[base + wordOffset].bigEndian
-                withUnsafeBytes(of: word) { bytes.append(contentsOf: $0) }
-            }
-            return bytes
-        }
-    }
-
-    private static func writePCSHashes(_ hashes: [[UInt8]], to buffer: MTLBuffer) {
-        let pointer = buffer.contents().bindMemory(to: UInt32.self, capacity: hashes.count * 8)
-        for (hashIndex, hash) in hashes.enumerated() {
-            precondition(hash.count == 32)
-            for wordOffset in 0..<8 {
-                let start = wordOffset * 4
-                let word = hash[start..<(start + 4)].withUnsafeBytes { raw -> UInt32 in
-                    raw.load(as: UInt32.self).bigEndian
-                }
-                pointer[hashIndex * 8 + wordOffset] = word
-            }
-        }
     }
 
     private static func sumGPU(_ lhs: Double?, _ rhs: Double?) -> Double? {
@@ -1922,7 +1494,6 @@ struct Options {
     let warmups: Int
     let outputDirectory: URL?
     fileprivate let sealWorkloads: [SealWorkload]
-    fileprivate let pcsWorkloads: [PCSWorkload]
     fileprivate let verifierWorkloads: [VerifierWorkload]
 
     fileprivate static let defaultSealWorkloads: [SealWorkload] = [
@@ -1961,12 +1532,6 @@ struct Options {
         ),
     ]
 
-    fileprivate static let defaultPCSWorkloads: [PCSWorkload] = [
-        PCSWorkload(name: "pcs-8", numVars: 8),
-        PCSWorkload(name: "pcs-10", numVars: 10),
-        PCSWorkload(name: "pcs-12", numVars: 12),
-    ]
-
     fileprivate static let defaultVerifierWorkloads: [VerifierWorkload] = [
         VerifierWorkload(name: "piccs-verify", stage: .piCCS, arity: 1, witnessRingCount: 1, fieldCount: 4),
         VerifierWorkload(name: "pirlc-verify", stage: .piRLC, arity: 3, witnessRingCount: 4, fieldCount: 2),
@@ -1981,7 +1546,6 @@ struct Options {
       --warmups N                Number of warmup iterations per workload. Default: 2.
       --output DIR               Directory to write benchmark artifacts into.
       --seal-workload NAME       Run only the named seal workload. Repeat or comma-separate values.
-      --pcs-workload NAME        Run only the named PCS workload. Repeat or comma-separate values.
       --verifier-workload NAME   Run only the named verifier workload. Repeat or comma-separate values.
       --list-workloads           Print the built-in workloads and exit.
       --help                     Show this help message.
@@ -1991,9 +1555,6 @@ struct Options {
         let seal = defaultSealWorkloads.map {
             "  \($0.name) - \($0.family): \($0.scenario)"
         }
-        let pcs = defaultPCSWorkloads.map {
-            "  \($0.name) - numVars=\($0.numVars)"
-        }
         let verifier = defaultVerifierWorkloads.map {
             "  \($0.name) - stage=\($0.stage.rawValue) arity=\($0.arity)"
         }
@@ -2001,9 +1562,6 @@ struct Options {
         return ([
             "Seal workloads:",
         ] + seal + [
-            "",
-            "PCS workloads:",
-        ] + pcs + [
             "",
             "Verifier workloads:",
         ] + verifier).joined(separator: "\n")
@@ -2014,7 +1572,6 @@ struct Options {
         var warmups = 2
         var outputDirectory: URL?
         var selectedSealWorkloads: [String] = []
-        var selectedPCSWorkloads: [String] = []
         var selectedVerifierWorkloads: [String] = []
 
         var iterator = arguments.makeIterator()
@@ -2040,11 +1597,6 @@ struct Options {
                     throw BenchmarkError.invalidArguments("--seal-workload requires at least one workload name")
                 }
                 selectedSealWorkloads.append(contentsOf: splitSelectionArgument(value))
-            case "--pcs-workload":
-                guard let value = iterator.next(), value.isEmpty == false else {
-                    throw BenchmarkError.invalidArguments("--pcs-workload requires at least one workload name")
-                }
-                selectedPCSWorkloads.append(contentsOf: splitSelectionArgument(value))
             case "--verifier-workload":
                 guard let value = iterator.next(), value.isEmpty == false else {
                     throw BenchmarkError.invalidArguments("--verifier-workload requires at least one workload name")
@@ -2064,11 +1616,6 @@ struct Options {
             selection: selectedSealWorkloads,
             label: "seal"
         )
-        let pcsWorkloads = try selectWorkloads(
-            from: defaultPCSWorkloads,
-            selection: selectedPCSWorkloads,
-            label: "pcs"
-        )
         let verifierWorkloads = try selectWorkloads(
             from: defaultVerifierWorkloads,
             selection: selectedVerifierWorkloads,
@@ -2080,7 +1627,6 @@ struct Options {
             warmups: warmups,
             outputDirectory: outputDirectory,
             sealWorkloads: sealWorkloads,
-            pcsWorkloads: pcsWorkloads,
             verifierWorkloads: verifierWorkloads
         ))
     }
@@ -2090,14 +1636,12 @@ struct Options {
         warmups: Int,
         outputDirectory: URL?,
         sealWorkloads: [SealWorkload],
-        pcsWorkloads: [PCSWorkload],
         verifierWorkloads: [VerifierWorkload]
     ) {
         self.iterations = iterations
         self.warmups = warmups
         self.outputDirectory = outputDirectory
         self.sealWorkloads = sealWorkloads
-        self.pcsWorkloads = pcsWorkloads
         self.verifierWorkloads = verifierWorkloads
     }
 
@@ -2291,11 +1835,6 @@ private struct SealWorkload: Codable {
     }
 }
 
-private struct PCSWorkload: Codable {
-    let name: String
-    let numVars: Int
-}
-
 private enum VerifierStageKind: String, Codable {
     case piCCS
     case piRLC
@@ -2315,24 +1854,7 @@ private protocol NamedBenchmarkWorkload {
 }
 
 extension SealWorkload: NamedBenchmarkWorkload {}
-extension PCSWorkload: NamedBenchmarkWorkload {}
 extension VerifierWorkload: NamedBenchmarkWorkload {}
-
-private struct PCSCPUCommitArtifact {
-    let codeword: [Fq]
-    let merkleLevels: [[[UInt8]]]
-}
-
-private struct PCSMetalIteration {
-    let commitCPU: Double
-    let openCPU: Double
-    let commitGPU: Double?
-    let openGPU: Double?
-    let commitThreadgroupWidths: [Int]
-    let openThreadgroupWidths: [Int]
-    let commitCounterSamplesCaptured: Bool
-    let openCounterSamplesCaptured: Bool
-}
 
 private struct TimingSummary: Codable {
     let samples: Int
@@ -2370,30 +1892,6 @@ private struct SealBenchmarkResult: Codable {
     let dispatchTracePath: String?
     let parityNote: String?
     let fuseFailure: String?
-}
-
-private struct PCSBenchmarkResult: Codable {
-    let workload: PCSWorkload
-    let status: BenchmarkEntryStatus
-    let completedIterations: Int
-    let expectedIterations: Int
-    let completedSamples: Int
-    let expectedSamples: Int
-    let peakRSSBytes: UInt64
-    let cpuCommit: TimingSummary?
-    let cpuOpen: TimingSummary?
-    let metalCommit: TimingSummary?
-    let metalOpen: TimingSummary?
-    let metalCommitGPU: TimingSummary?
-    let metalOpenGPU: TimingSummary?
-    let metalCommitThreadgroupWidths: [Int]
-    let metalOpenThreadgroupWidths: [Int]
-    let counterSamplingAvailable: Bool
-    let metalCommitCountersCaptured: Bool
-    let metalOpenCountersCaptured: Bool
-    let gpuFamilyTag: String
-    let gpuName: String
-    let note: String?
 }
 
 private struct VerifierBenchmarkResult: Codable {
@@ -2451,7 +1949,6 @@ private struct BenchmarkReport: Codable {
     var completedAt: String?
     var failure: String?
     var sealWorkloads: [SealBenchmarkResult]
-    var pcsWorkloads: [PCSBenchmarkResult]
     var verifierWorkloads: [VerifierBenchmarkResult]
 }
 
@@ -2510,7 +2007,6 @@ private actor BenchmarkArtifactWriter {
         metadata: BenchmarkMetadata,
         configuration: BenchmarkConfiguration,
         initialSealWorkloads: [SealBenchmarkResult],
-        initialPCSWorkloads: [PCSBenchmarkResult],
         initialVerifierWorkloads: [VerifierBenchmarkResult]
     ) throws {
         self.encoder = JSONEncoder()
@@ -2528,7 +2024,6 @@ private actor BenchmarkArtifactWriter {
             completedAt: nil,
             failure: nil,
             sealWorkloads: initialSealWorkloads,
-            pcsWorkloads: initialPCSWorkloads,
             verifierWorkloads: initialVerifierWorkloads
         )
         self.traceReport = BenchmarkDispatchTraceReport(
@@ -2573,31 +2068,6 @@ private actor BenchmarkArtifactWriter {
             completedAt: report.completedAt,
             failure: report.failure,
             sealWorkloads: seal,
-            pcsWorkloads: report.pcsWorkloads,
-            verifierWorkloads: report.verifierWorkloads
-        )
-        try Self.persist(
-            report: report,
-            traceReport: traceReport,
-            encoder: encoder,
-            jsonURL: jsonURL,
-            markdownURL: markdownURL,
-            dispatchTraceURL: dispatchTraceURL
-        )
-    }
-
-    func updatePCS(_ result: PCSBenchmarkResult, at index: Int) throws {
-        var pcs = report.pcsWorkloads
-        pcs[index] = result
-        report = BenchmarkReport(
-            metadata: report.metadata,
-            configuration: report.configuration,
-            status: report.status,
-            lastUpdatedAt: Self.timestamp(),
-            completedAt: report.completedAt,
-            failure: report.failure,
-            sealWorkloads: report.sealWorkloads,
-            pcsWorkloads: pcs,
             verifierWorkloads: report.verifierWorkloads
         )
         try Self.persist(
@@ -2621,7 +2091,6 @@ private actor BenchmarkArtifactWriter {
             completedAt: report.completedAt,
             failure: report.failure,
             sealWorkloads: report.sealWorkloads,
-            pcsWorkloads: report.pcsWorkloads,
             verifierWorkloads: verifier
         )
         try Self.persist(
@@ -2713,31 +2182,6 @@ private actor BenchmarkArtifactWriter {
                 dispatchTracePath: result.dispatchTracePath,
                 parityNote: result.parityNote,
                 fuseFailure: result.fuseFailure
-            )
-        }
-        report.pcsWorkloads = report.pcsWorkloads.map { result in
-            result.status == .completed ? result : PCSBenchmarkResult(
-                workload: result.workload,
-                status: .failed,
-                completedIterations: result.completedIterations,
-                expectedIterations: result.expectedIterations,
-                completedSamples: result.completedSamples,
-                expectedSamples: result.expectedSamples,
-                peakRSSBytes: result.peakRSSBytes,
-                cpuCommit: result.cpuCommit,
-                cpuOpen: result.cpuOpen,
-                metalCommit: result.metalCommit,
-                metalOpen: result.metalOpen,
-                metalCommitGPU: result.metalCommitGPU,
-                metalOpenGPU: result.metalOpenGPU,
-                metalCommitThreadgroupWidths: result.metalCommitThreadgroupWidths,
-                metalOpenThreadgroupWidths: result.metalOpenThreadgroupWidths,
-                counterSamplingAvailable: result.counterSamplingAvailable,
-                metalCommitCountersCaptured: result.metalCommitCountersCaptured,
-                metalOpenCountersCaptured: result.metalOpenCountersCaptured,
-                gpuFamilyTag: result.gpuFamilyTag,
-                gpuName: result.gpuName,
-                note: result.note
             )
         }
         report.verifierWorkloads = report.verifierWorkloads.map { result in

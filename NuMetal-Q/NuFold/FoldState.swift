@@ -12,7 +12,6 @@ import Foundation
 /// - The running Ajtai commitment
 /// - The accumulated witness (in folded form)
 /// - Norm budget tracking
-/// - The Fiat-Shamir transcript state
 /// - Blinding randomness for zero-knowledge
 ///
 /// FoldState is NEVER exposed through any public API.
@@ -194,7 +193,7 @@ internal struct FoldState: Sendable {
     var requiresScheduledDecomposition: Bool { normBudget.requiresScheduledDecomposition }
 }
 
-/// A collection of FoldStates being folded together in a k-ary fold.
+/// A collection of FoldStates being reduced through the binary fold path.
 struct FoldBatch: Sendable {
     let states: [FoldState]
     let arity: Int

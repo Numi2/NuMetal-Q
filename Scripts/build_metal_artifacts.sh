@@ -39,8 +39,7 @@ for shader in \
   "$SHADER_DIR/NuCommitKernels.metal" \
   "$SHADER_DIR/NuDecompKernels.metal" \
   "$SHADER_DIR/NuMatrixKernels.metal" \
-  "$SHADER_DIR/NuSumCheckKernels.metal" \
-  "$SHADER_DIR/NuSealKernels.metal"; do
+  "$SHADER_DIR/NuSumCheckKernels.metal"; do
   require_file "$shader"
 done
 
@@ -51,7 +50,6 @@ cat \
   "$SHADER_DIR/NuDecompKernels.metal" \
   "$SHADER_DIR/NuMatrixKernels.metal" \
   "$SHADER_DIR/NuSumCheckKernels.metal" \
-  "$SHADER_DIR/NuSealKernels.metal" \
   > "$COMBINED_SOURCE"
 
 xcrun metal -Os -c "$COMBINED_SOURCE" -o "$AIR_FILE"
@@ -67,8 +65,7 @@ cat > "$MANIFEST_FILE" <<'JSON'
     "NuCommitKernels",
     "NuDecompKernels",
     "NuMatrixKernels",
-    "NuSumCheckKernels",
-    "NuSealKernels"
+    "NuSumCheckKernels"
   ]
 }
 JSON

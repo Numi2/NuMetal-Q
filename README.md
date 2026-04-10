@@ -34,7 +34,7 @@ swift run NuMetalQAcceptanceDemo
 swift run NuMetalQAcceptanceDemo --format json --output /tmp/numeq-acceptance.json
 swift run NuMetalQBenchmarks
 swift run NuMetalQBenchmarks --list-workloads
-swift run NuMetalQBenchmarks --seal-workload auth-policy-sparse --pcs-workload pcs-8
+swift run NuMetalQBenchmarks --seal-workload auth-policy-sparse
 ```
 
 ## Subsystem Docs
