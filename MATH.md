@@ -11,7 +11,7 @@ NuMeQ's current production profile is the canonical profile selected by `NuProfi
 
   `q = 2^64 - 2^32 - 31 = 0xFFFF_FFFE_FFFF_FFE1`
 
-- Ring polynomial:
+- Ring polynomial
 
   `Phi(X) = X^64 + 1`
 
