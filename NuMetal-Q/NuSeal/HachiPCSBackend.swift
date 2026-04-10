@@ -5,7 +5,6 @@ import Metal
 internal struct HachiPCSBackend {
     let parameterBundle: HachiSealParameterBundle
     let codewordBlowup: Int
-    private let directPackedChunkCounts: Set<Int> = [1, 2, 4]
 
     init(
         parameterBundle: HachiSealParameterBundle = NuParams.derive(from: .canonical).seal,
@@ -104,39 +103,20 @@ internal struct HachiPCSBackend {
                     evaluation.toBytes(),
                     domain: "NuMeQ.Decider.Hachi.Eval"
                 )
-                if artifact.commitment.mode == .directPacked {
-                    guard let material = artifact.directPackedWitnessMaterial else {
-                        throw SpartanSealError.serializationFailure
-                    }
-                    return HachiPCSOpening(
-                        oracle: query.oracle,
-                        evaluation: evaluation,
-                        scheduleDigest: scheduleDigest,
-                        evaluationDigest: evaluationDigest,
-                        directPacked: try makeDirectPackedOpening(
-                            material: material,
-                            commitment: artifact.commitment,
-                            point: query.point,
-                            evaluation: evaluation,
-                            context: context
-                        )
-                    )
+                guard let material = artifact.directPackedWitnessMaterial else {
+                    throw SpartanSealError.serializationFailure
                 }
-
-                let codewordIndex = queryIndex(
-                    point: query.point,
-                    oracle: query.oracle,
-                    codewordLength: artifact.codeword.count
-                )
                 return HachiPCSOpening(
                     oracle: query.oracle,
                     evaluation: evaluation,
                     scheduleDigest: scheduleDigest,
                     evaluationDigest: evaluationDigest,
-                    general: HachiGeneralPCSOpeningProof(
-                        codewordIndex: UInt32(codewordIndex),
-                        codewordValue: artifact.codeword[codewordIndex],
-                        merkleAuthenticationPath: artifact.authenticationPath(for: codewordIndex)
+                    directPacked: try makeDirectPackedOpening(
+                        material: material,
+                        commitment: artifact.commitment,
+                        point: query.point,
+                        evaluation: evaluation,
+                        context: context
                     )
                 )
             }
@@ -269,54 +249,18 @@ internal struct HachiPCSBackend {
                     return false
                 }
 
-                let expectsDirectMode = commitment.mode == .directPacked
-                if expectsDirectMode {
-                    guard opening.mode == .directPacked else {
-                        diagnostics.recordFailure("expected direct-packed opening for \(pointKey(opening.oracle))")
-                        return false
-                    }
-                    guard verifyDirectPackedOpening(
-                        opening: opening,
-                        commitment: commitment,
-                        point: classProof.point,
-                        context: context,
-                        diagnostics: &diagnostics
-                    ) else {
-                        return false
-                    }
-                } else {
-                    guard opening.mode == .general else {
-                        diagnostics.recordFailure("expected general hachi opening for \(pointKey(opening.oracle))")
-                        return false
-                    }
-                    let expectedIndex = queryIndex(
-                        point: classProof.point,
-                        oracle: opening.oracle,
-                        codewordLength: Int(commitment.codewordLength)
-                    )
-                    guard let general = opening.general else {
-                        diagnostics.recordFailure("missing general hachi opening payload for \(pointKey(opening.oracle))")
-                        return false
-                    }
-                    guard Int(general.codewordIndex) == expectedIndex else {
-                        diagnostics.recordArtifactDiff(
-                            oracle: opening.oracle,
-                            component: "codewordIndex",
-                            detail: "expected \(expectedIndex), got \(general.codewordIndex)"
-                        )
-                        return false
-                    }
-                    guard verifyAuthenticationPath(
-                        opening: general,
-                        commitment: commitment
-                    ) else {
-                        diagnostics.recordArtifactDiff(
-                            oracle: opening.oracle,
-                            component: "merkleRoot",
-                            detail: "authentication path does not reconstruct commitment root"
-                        )
-                        return false
-                    }
+                guard opening.mode == .directPacked else {
+                    diagnostics.recordFailure("expected direct-packed opening for \(pointKey(opening.oracle))")
+                    return false
+                }
+                guard verifyDirectPackedOpening(
+                    opening: opening,
+                    commitment: commitment,
+                    point: classProof.point,
+                    context: context,
+                    diagnostics: &diagnostics
+                ) else {
+                    return false
                 }
             }
         }
@@ -354,61 +298,14 @@ internal struct HachiPCSBackend {
         traceCollector: MetalTraceCollector?
     ) throws -> HachiPCSOracleArtifact {
         let packed = WitnessPacking.packFieldVectorToRings(polynomial.evals)
-        if usesDirectPackedOpening(forPackedChunkCount: packed.count) {
-            return try buildDirectPackedOracleArtifact(
-                label: label,
-                packedWitness: packed,
-                valueCount: polynomial.evals.count,
-                context: context
-            )
+        guard usesDirectPackedOpening(forPackedChunkCount: packed.count) else {
+            throw SpartanSealError.serializationFailure
         }
-        if let context {
-            return try buildOracleArtifactMetal(
-                label: label,
-                polynomial: polynomial,
-                context: context,
-                traceCollector: traceCollector
-            )
-        }
-
-        let codeword = try buildCodeword(
-            polynomial: polynomial,
-            context: context,
-            traceCollector: traceCollector,
-            label: label
-        )
-        let merkleLevels = try buildMerkleLevels(
-            codeword: codeword,
-            context: context,
-            traceCollector: traceCollector,
-            label: label
-        )
-        let key = AjtaiKey.expand(
-            seed: parameterBundle.seed,
-            slotCount: max(1, packed.count)
-        )
-        let tableCommitment = AjtaiCommitter.commit(key: key, witness: packed)
-        let tableDigest = digest(
-            polynomial.evals.flatMap { $0.toBytes() },
-            domain: "NuMeQ.Decider.Hachi.Table"
-        )
-
-        return HachiPCSOracleArtifact(
-            commitment: HachiPCSCommitment(
-                oracle: label,
-                mode: .general,
-                tableCommitment: tableCommitment,
-                tableDigest: tableDigest,
-                merkleRoot: merkleLevels.last?.first ?? digest([], domain: "NuMeQ.Decider.Hachi.Empty"),
-                parameterDigest: parameterBundle.parameterDigest,
-                valueCount: UInt32(clamping: polynomial.evals.count),
-                codewordLength: UInt32(clamping: codeword.count),
-                packedChunkCount: UInt32(clamping: packed.count),
-                statementDigest: []
-            ),
-            codeword: codeword,
-            merkleLevels: merkleLevels,
-            directPackedWitnessMaterial: nil
+        return try buildDirectPackedOracleArtifact(
+            label: label,
+            packedWitness: packed,
+            valueCount: polynomial.evals.count,
+            context: context
         )
     }
 
@@ -438,10 +335,8 @@ internal struct HachiPCSBackend {
                 tableCommitment: aggregateOuterCommitment,
                 directPackedOuterCommitments: material.chunks.map(\.outerCommitment),
                 tableDigest: statementDigest,
-                merkleRoot: [],
                 parameterDigest: parameterBundle.parameterDigest,
                 valueCount: UInt32(clamping: valueCount),
-                codewordLength: 0,
                 packedChunkCount: UInt32(clamping: packedWitness.count),
                 statementDigest: statementDigest
             ),
@@ -458,173 +353,17 @@ internal struct HachiPCSBackend {
         traceCollector: MetalTraceCollector?
     ) throws -> HachiPCSOracleArtifact {
         let packed = WitnessPacking.packFieldVectorToRings(polynomial.evals)
-        if usesDirectPackedOpening(forPackedChunkCount: packed.count) {
-            return try buildDirectPackedOracleArtifact(
-                label: label,
-                packedWitness: packed,
-                valueCount: polynomial.evals.count,
-                context: context
-            )
+        guard usesDirectPackedOpening(forPackedChunkCount: packed.count) else {
+            throw SpartanSealError.serializationFailure
         }
-        let base = polynomial.evals.isEmpty ? [Fq.zero] : polynomial.evals
-        let codewordLength = max(1, base.count * codewordBlowup)
-
-        let (codeword, firstLevel) = try autoreleasepool { () throws -> ([Fq], [[UInt8]]) in
-            guard let evalBuffer = context.uploadFieldElements(base),
-                  let codewordBuffer = context.makeSharedBuffer(
-                    length: codewordLength * MemoryLayout<UInt32>.size * 2
-                  ),
-                  let leafBuffer = context.makeSharedBuffer(length: codewordLength * 32) else {
-                throw NuMetalError.heapCreationFailed
-            }
-
-            let dispatcher = KernelDispatcher(context: context)
-            if let traceCollector {
-                let encodeTiming = try dispatcher.dispatchSealEncodeTimed(
-                    evalBuffer: evalBuffer,
-                    codewordBuffer: codewordBuffer,
-                    n: base.count,
-                    blowup: codewordBlowup
-                )
-                traceCollector.append(
-                    stage: "seal.verify.assisted",
-                    iteration: traceCollector.defaultIteration,
-                    dispatchLabel: "\(oracleTracePrefix(for: label)).encode",
-                    kernelFamily: .sealEncode,
-                    timing: encodeTiming
-                )
-                let leafTiming = try dispatcher.dispatchMerkleHashTimed(
-                    leavesBuffer: codewordBuffer,
-                    nodesBuffer: leafBuffer,
-                    numLeaves: codewordLength
-                )
-                traceCollector.append(
-                    stage: "seal.verify.assisted",
-                    iteration: traceCollector.defaultIteration,
-                    dispatchLabel: "\(oracleTracePrefix(for: label)).leaf_hash",
-                    kernelFamily: .merkleHash,
-                    timing: leafTiming
-                )
-            } else {
-                let stage = try dispatcher.makeStage(label: "NuMeQ.PCS.\(String(describing: label)).Commit")
-                var nU32 = UInt32(base.count)
-                var blowupU32 = UInt32(codewordBlowup)
-                _ = try withUnsafeBytes(of: &nU32) { nBytes in
-                    try withUnsafeBytes(of: &blowupU32) { blowupBytes in
-                        try stage.encode(
-                            family: .sealEncode,
-                            buffers: [
-                                (evalBuffer, 0, 0),
-                                (codewordBuffer, 0, 1),
-                            ],
-                            bytes: [
-                                (UnsafeRawPointer(nBytes.baseAddress!), nBytes.count, 2),
-                                (UnsafeRawPointer(blowupBytes.baseAddress!), blowupBytes.count, 3),
-                            ],
-                            threadsPerGrid: MTLSize(width: codewordLength, height: 1, depth: 1),
-                            requestedThreadgroupWidth: Int(MetalStorageLayout.defaultSealChunkSize)
-                        )
-                    }
-                }
-
-                var leafCount = UInt32(codewordLength)
-                _ = try withUnsafeBytes(of: &leafCount) { countBytes in
-                    try stage.encode(
-                        family: .merkleHash,
-                        buffers: [
-                            (codewordBuffer, 0, 0),
-                            (leafBuffer, 0, 1),
-                        ],
-                        bytes: [
-                            (UnsafeRawPointer(countBytes.baseAddress!), countBytes.count, 2),
-                        ],
-                        threadsPerGrid: MTLSize(width: codewordLength, height: 1, depth: 1),
-                        requestedThreadgroupWidth: Int(MetalStorageLayout.defaultMerkleChunkSize)
-                    )
-                }
-
-                stage.commit()
-                try stage.waitUntilCompleted()
-            }
-
-            let codewordPointer = codewordBuffer.contents().bindMemory(
-                to: UInt32.self,
-                capacity: codewordLength * 2
-            )
-            let packedCodeword = Array(
-                UnsafeBufferPointer(start: codewordPointer, count: codewordLength * 2)
-            )
-            return (
-                MetalFieldPacking.unpackFieldElementsSoA(packedCodeword, count: codewordLength),
-                readHashLevel(from: leafBuffer, count: codewordLength)
-            )
+        if traceCollector != nil {
+            _ = oracleTracePrefix(for: label)
         }
-
-        var merkleLevels = [firstLevel]
-        var currentLevel = firstLevel
-        while currentLevel.count > 1 {
-            if currentLevel.count % 2 != 0, let last = currentLevel.last {
-                currentLevel.append(last)
-            }
-            let parentCount = currentLevel.count / 2
-            currentLevel = try autoreleasepool { () throws -> [[UInt8]] in
-                guard let childBuffer = context.makeSharedBuffer(length: currentLevel.count * 32),
-                      let parentBuffer = context.makeSharedBuffer(length: parentCount * 32) else {
-                    throw NuMetalError.heapCreationFailed
-                }
-                writeHashLevel(currentLevel, to: childBuffer)
-                let dispatcher = KernelDispatcher(context: context)
-                if let traceCollector {
-                    let timing = try dispatcher.dispatchMerkleParentTimed(
-                        childBuffer: childBuffer,
-                        parentBuffer: parentBuffer,
-                        numParents: parentCount
-                    )
-                    traceCollector.append(
-                        stage: "seal.verify.assisted",
-                        iteration: traceCollector.defaultIteration,
-                        dispatchLabel: "\(oracleTracePrefix(for: label)).merkle_parent[level=\(merkleLevels.count)]",
-                        kernelFamily: .merkleParent,
-                        timing: timing
-                    )
-                } else {
-                    try dispatcher.dispatchMerkleParent(
-                        childBuffer: childBuffer,
-                        parentBuffer: parentBuffer,
-                        numParents: parentCount
-                    )
-                }
-                return readHashLevel(from: parentBuffer, count: parentCount)
-            }
-            merkleLevels.append(currentLevel)
-        }
-
-        let key = AjtaiKey.expand(
-            seed: parameterBundle.seed,
-            slotCount: max(1, packed.count)
-        )
-        let tableCommitment = AjtaiCommitter.commit(key: key, witness: packed)
-        let tableDigest = digest(
-            polynomial.evals.flatMap { $0.toBytes() },
-            domain: "NuMeQ.Decider.Hachi.Table"
-        )
-
-        return HachiPCSOracleArtifact(
-            commitment: HachiPCSCommitment(
-                oracle: label,
-                mode: .general,
-                tableCommitment: tableCommitment,
-                tableDigest: tableDigest,
-                merkleRoot: merkleLevels.last?.first ?? digest([], domain: "NuMeQ.Decider.Hachi.Empty"),
-                parameterDigest: parameterBundle.parameterDigest,
-                valueCount: UInt32(clamping: polynomial.evals.count),
-                codewordLength: UInt32(clamping: codeword.count),
-                packedChunkCount: UInt32(clamping: packed.count),
-                statementDigest: []
-            ),
-            codeword: codeword,
-            merkleLevels: merkleLevels,
-            directPackedWitnessMaterial: nil
+        return try buildDirectPackedOracleArtifact(
+            label: label,
+            packedWitness: packed,
+            valueCount: polynomial.evals.count,
+            context: context
         )
     }
 
@@ -842,7 +581,7 @@ internal struct HachiPCSBackend {
     }
 
     private func usesDirectPackedOpening(forPackedChunkCount packedChunkCount: Int) -> Bool {
-        directPackedChunkCounts.contains(packedChunkCount)
+        packedChunkCount > 0
     }
 
     private func makeDirectPackedOpening(
@@ -1135,24 +874,6 @@ internal struct HachiPCSBackend {
         if commitmentDiffs.isEmpty == false {
             return commitmentDiffs
         }
-        if expected.codeword != actual.codeword {
-            return [
-                HachiPCSArtifactDiff(
-                    oracle: expected.commitment.oracle,
-                    component: "codeword",
-                    detail: "CPU and Metal codewords diverged"
-                )
-            ]
-        }
-        if expected.merkleLevels != actual.merkleLevels {
-            return [
-                HachiPCSArtifactDiff(
-                    oracle: expected.commitment.oracle,
-                    component: "merkleLevels",
-                    detail: "CPU and Metal Merkle levels diverged"
-                )
-            ]
-        }
         return []
     }
 
@@ -1191,40 +912,10 @@ internal struct HachiPCSBackend {
         if actual.statementDigest != expected.statementDigest {
             return [HachiPCSArtifactDiff(oracle: oracle, component: "statementDigest", detail: "digest mismatch")]
         }
-        switch expected.mode {
-        case .directPacked:
-            if actual.merkleRoot.isEmpty == false || actual.codewordLength != 0 || actual.tableDigest != expected.tableDigest {
-                return [HachiPCSArtifactDiff(oracle: oracle, component: "directPackedShape", detail: "unexpected general-path artifacts on direct-packed commitment")]
-            }
-        case .general:
-            if actual.tableDigest != expected.tableDigest {
-                return [HachiPCSArtifactDiff(oracle: oracle, component: "tableDigest", detail: "digest mismatch")]
-            }
-            if actual.merkleRoot != expected.merkleRoot {
-                return [HachiPCSArtifactDiff(oracle: oracle, component: "merkleRoot", detail: "root mismatch")]
-            }
-            if actual.codewordLength != expected.codewordLength {
-                return [HachiPCSArtifactDiff(oracle: oracle, component: "codewordLength", detail: "expected \(expected.codewordLength), got \(actual.codewordLength)")]
-            }
+        if actual.tableDigest != expected.tableDigest {
+            return [HachiPCSArtifactDiff(oracle: oracle, component: "tableDigest", detail: "digest mismatch")]
         }
         return []
-    }
-
-    private func verifyAuthenticationPath(
-        opening: HachiGeneralPCSOpeningProof,
-        commitment: HachiPCSCommitment
-    ) -> Bool {
-        var current = leafHash(opening.codewordValue)
-        var index = Int(opening.codewordIndex)
-        for sibling in opening.merkleAuthenticationPath {
-            if index % 2 == 0 {
-                current = parentHash(left: current, right: sibling)
-            } else {
-                current = parentHash(left: sibling, right: current)
-            }
-            index /= 2
-        }
-        return current == commitment.merkleRoot
     }
 }
 

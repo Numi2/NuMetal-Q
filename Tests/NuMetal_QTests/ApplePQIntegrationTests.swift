@@ -104,6 +104,7 @@ final class ApplePQIntegrationTests: XCTestCase {
             commitment: AjtaiCommitment(value: .zero),
             witness: [.zero],
             publicInputs: [Fq(7), Fq(9)],
+            publicHeader: AcceptanceSupport.packedPublicHeader([Fq(7), Fq(9)]),
             normBudget: NormBudget(bound: 8, decompBase: 2, decompLimbs: 3),
             maxWitnessClass: .public
         )
@@ -131,6 +132,7 @@ final class ApplePQIntegrationTests: XCTestCase {
             commitment: AjtaiCommitment(value: RingElement(constant: Fq(9))),
             witness: [RingElement(constant: Fq(7))],
             publicInputs: [Fq(2), Fq(3)],
+            publicHeader: AcceptanceSupport.packedPublicHeader([Fq(2), Fq(3)]),
             normBudget: NormBudget(bound: 8, decompBase: 2, decompLimbs: 3),
             maxWitnessClass: .public
         )
@@ -166,6 +168,7 @@ final class ApplePQIntegrationTests: XCTestCase {
             commitment: AjtaiCommitment(value: .zero),
             witness: [.zero],
             publicInputs: [Fq(3)],
+            publicHeader: AcceptanceSupport.packedPublicHeader([Fq(3)]),
             normBudget: NormBudget(bound: 8, decompBase: 2, decompLimbs: 3),
             maxWitnessClass: .public
         )
@@ -174,6 +177,7 @@ final class ApplePQIntegrationTests: XCTestCase {
             commitment: AjtaiCommitment(value: RingElement(coeffs: (0..<RingElement.degree).map { Fq(UInt64($0 + 1)) })),
             witness: [RingElement(coeffs: (0..<RingElement.degree).map { Fq(UInt64(($0 + 5) % 17)) })],
             publicInputs: [Fq(5)],
+            publicHeader: AcceptanceSupport.packedPublicHeader([Fq(5)]),
             normBudget: NormBudget(bound: 8, decompBase: 2, decompLimbs: 3),
             maxWitnessClass: .public
         )
@@ -316,6 +320,7 @@ private func makeVaultTestState(shapeByte: UInt8) -> FoldState {
         commitment: AjtaiCommitment(value: RingElement(constant: Fq(9))),
         witness: [RingElement(constant: Fq(7))],
         publicInputs: [Fq(2), Fq(3)],
+        publicHeader: AcceptanceSupport.packedPublicHeader([Fq(2), Fq(3)]),
         normBudget: NormBudget(bound: 8, decompBase: 2, decompLimbs: 3),
         maxWitnessClass: .public
     )
@@ -323,7 +328,7 @@ private func makeVaultTestState(shapeByte: UInt8) -> FoldState {
 
 private func vaultStateFieldOffsets(for state: FoldState) -> (statementCount: Int, relaxation: Int) {
     let ringByteCount = RingElement.degree * MemoryLayout<UInt64>.size
-    var offset = Data("NuMeQFv6".utf8).count
+    var offset = Data("NuMeQFv7".utf8).count
     offset += 16 // chainID
     offset += MemoryLayout<UInt64>.size // epoch
     offset += 32 // shape digest
@@ -332,6 +337,8 @@ private func vaultStateFieldOffsets(for state: FoldState) -> (statementCount: In
     offset += state.accumulatedWitness.count * ringByteCount
     offset += MemoryLayout<UInt32>.size // public input count
     offset += state.publicInputs.count * MemoryLayout<UInt64>.size
+    offset += MemoryLayout<UInt32>.size // public header length
+    offset += state.publicHeader.count // public header bytes
     offset += MemoryLayout<UInt8>.size // kind
 
     let statementCountOffset = offset

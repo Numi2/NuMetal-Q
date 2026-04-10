@@ -50,7 +50,13 @@ public struct NormBudget: Sendable {
 
     /// Update the scheduler proxy after a k-ary fold with given challenge magnitude.
     public mutating func recordFold(arity k: Int, challengeMagnitude: UInt64) {
-        currentNorm = currentNorm &* UInt64(k) &+ challengeMagnitude
+        let arity = UInt64(max(1, k))
+        let scaledNorm = currentNorm.multipliedReportingOverflow(by: arity)
+        let grownNorm = scaledNorm.partialValue.addingReportingOverflow(challengeMagnitude)
+        currentNorm = bound
+        if scaledNorm.overflow == false, grownNorm.overflow == false {
+            currentNorm = min(bound, grownNorm.partialValue)
+        }
         foldsSinceDecomp += 1
     }
 

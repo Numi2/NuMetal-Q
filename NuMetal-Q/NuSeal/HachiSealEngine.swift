@@ -703,7 +703,6 @@ private extension HachiSealEngine {
             writer.append(Data(outerCommitment.value.toBytes()))
         }
         writer.appendLengthPrefixed(Data(commitment.tableDigest))
-        writer.appendLengthPrefixed(Data(commitment.merkleRoot))
         writer.append(commitment.packedChunkCount)
         writer.appendLengthPrefixed(Data(commitment.statementDigest))
     }
@@ -898,7 +897,10 @@ private extension HachiSealEngine {
                 numerator *= (point - xm)
                 denominator *= (xj - xm)
             }
-            result += sample * numerator * denominator.inverse()
+            guard let denominatorInverse = denominator.inverted() else {
+                preconditionFailure("Lagrange interpolation denominator must be nonzero")
+            }
+            result += sample * numerator * denominatorInverse
         }
         return result
     }

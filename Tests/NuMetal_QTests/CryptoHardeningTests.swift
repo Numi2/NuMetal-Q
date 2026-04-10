@@ -77,8 +77,7 @@ final class CryptoHardeningTests: XCTestCase {
         XCTAssertEqual(digest, Array(SHA256.hash(data: artifact)))
         XCTAssertTrue(certificate.isValid)
         XCTAssertEqual(certificate.hachiDecider.relationID, "D_Nu")
-        XCTAssertEqual(certificate.releasePolicy.minimumRawSecurityBits, 0)
-        XCTAssertEqual(certificate.releasePolicy.minimumComposedSecurityBits, 0)
+        XCTAssertTrue(certificate.releasePolicy.informationalOnly)
         XCTAssertEqual(
             certificate.estimatorTranscript.model,
             "heuristic profile estimate (informational only)"
@@ -93,6 +92,29 @@ final class CryptoHardeningTests: XCTestCase {
         let nonBase = Fq4(a: Fq2(a: Fq(3), b: Fq(5)), b: Fq2(a: .one, b: .zero))
         XCTAssertFalse(Fq4Convolution.isBaseSubfieldElement(nonBase))
         XCTAssertNil(Fq4Convolution.tryProjectToBaseField(nonBase))
+    }
+
+    func testCheckedInversionRejectsZeroAcrossTower() {
+        XCTAssertNil(Fq.zero.inverted())
+        XCTAssertNil(Fq2.zero.inverted())
+        XCTAssertNil(Fq4.zero.inverted())
+        XCTAssertEqual(Fq(7).inverted().map { Fq(7) * $0 }, .one)
+    }
+
+    func testTranscriptByteAbsorptionDistinguishesFormerReductionCollision() {
+        let zeroBytes = Data(repeating: 0x00, count: MemoryLayout<UInt64>.size)
+        let modulusBytes = withUnsafeBytes(of: Fq.modulus.littleEndian) { Data($0) }
+
+        var left = NuTranscriptField(domain: "Tests.Transcript.InjectiveBytes")
+        left.absorb(domain: "payload", bytes: zeroBytes)
+
+        var right = NuTranscriptField(domain: "Tests.Transcript.InjectiveBytes")
+        right.absorb(domain: "payload", bytes: modulusBytes)
+
+        XCTAssertNotEqual(
+            left.challengeScalar(domain: "challenge"),
+            right.challengeScalar(domain: "challenge")
+        )
     }
 
     func testPiCCSDirectAndNegative() {

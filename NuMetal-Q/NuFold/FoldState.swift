@@ -53,6 +53,12 @@ internal struct FoldState: Sendable {
     /// public inputs. For typed traces this is the root header public input.
     var publicInputs: [Fq]
 
+    /// Exact public header bytes bound to the state.
+    ///
+    /// For aggregate states this is the concatenation of every fused leaf header
+    /// in fuse order. For typed traces this is the root header payload.
+    var publicHeader: Data
+
     /// Number of logical statements represented by this state.
     ///
     /// Aggregate states count fused CCS instances. Typed traces count DAG nodes.
@@ -88,6 +94,7 @@ internal struct FoldState: Sendable {
         commitment: AjtaiCommitment,
         witness: [RingElement],
         publicInputs: [Fq],
+        publicHeader: Data,
         normBudget: NormBudget,
         maxWitnessClass: WitnessClass
     ) {
@@ -98,6 +105,7 @@ internal struct FoldState: Sendable {
         self.commitment = commitment
         self.accumulatedWitness = witness
         self.publicInputs = publicInputs
+        self.publicHeader = publicHeader
         self.statementCount = 1
         self.normBudget = normBudget
         self.errorTerms = []
@@ -118,6 +126,7 @@ internal struct FoldState: Sendable {
         commitment: AjtaiCommitment,
         accumulatedWitness: [RingElement],
         publicInputs: [Fq],
+        publicHeader: Data,
         statementCount: UInt32 = 1,
         normBudget: NormBudget,
         errorTerms: [RingElement],
@@ -135,6 +144,7 @@ internal struct FoldState: Sendable {
         self.commitment = commitment
         self.accumulatedWitness = accumulatedWitness
         self.publicInputs = publicInputs
+        self.publicHeader = publicHeader
         self.statementCount = statementCount
         self.normBudget = normBudget
         self.errorTerms = errorTerms

@@ -14,7 +14,6 @@ public enum SealProofCodec {
         static let sumcheckEvaluations = 64
         static let pcsClasses = 4_096
         static let pcsOpenings = 4_096
-        static let merklePathNodes = 256
         static let shortLinearRounds = 4_096
         static let shortLinearResponses = 4_096
         static let commitments = 4_096
@@ -256,18 +255,10 @@ public enum SealProofCodec {
         writer.appendLengthPrefixed(opening.scheduleDigest)
         writer.appendLengthPrefixed(opening.evaluationDigest)
         writer.append(opening.mode.rawValue)
-        switch opening.mode {
-        case .directPacked:
-            guard let directPacked = opening.directPacked else {
-                preconditionFailure("direct-packed opening missing payload")
-            }
-            encode(directPacked, into: &writer)
-        case .general:
-            guard let general = opening.general else {
-                preconditionFailure("general opening missing payload")
-            }
-            encode(general, into: &writer)
+        guard let directPacked = opening.directPacked else {
+            preconditionFailure("direct-packed opening missing payload")
         }
+        encode(directPacked, into: &writer)
     }
 
     private static func decodeOpening(from reader: inout BinaryReader) throws -> HachiPCSOpening {
@@ -275,27 +266,17 @@ public enum SealProofCodec {
         let evaluation = try decodeFq(from: &reader)
         let scheduleDigest = try reader.readLengthPrefixedBytes(maxCount: Limits.oracleDigestBytes)
         let evaluationDigest = try reader.readLengthPrefixedBytes(maxCount: Limits.oracleDigestBytes)
-        guard let mode = HachiPCSOpeningMode(rawValue: try reader.readUInt8()) else {
+        guard let mode = HachiPCSOpeningMode(rawValue: try reader.readUInt8()),
+              mode == .directPacked else {
             throw BinaryReader.Error.invalidData
         }
-        switch mode {
-        case .directPacked:
-            return HachiPCSOpening(
-                oracle: oracle,
-                evaluation: evaluation,
-                scheduleDigest: scheduleDigest,
-                evaluationDigest: evaluationDigest,
-                directPacked: try decodeDirectPackedOpening(from: &reader)
-            )
-        case .general:
-            return HachiPCSOpening(
-                oracle: oracle,
-                evaluation: evaluation,
-                scheduleDigest: scheduleDigest,
-                evaluationDigest: evaluationDigest,
-                general: try decodeGeneralOpening(from: &reader)
-            )
-        }
+        return HachiPCSOpening(
+            oracle: oracle,
+            evaluation: evaluation,
+            scheduleDigest: scheduleDigest,
+            evaluationDigest: evaluationDigest,
+            directPacked: try decodeDirectPackedOpening(from: &reader)
+        )
     }
 
     private static func encode(_ proof: HachiDirectPackedOpeningProof, into writer: inout BinaryWriter) {
@@ -307,34 +288,6 @@ public enum SealProofCodec {
         HachiDirectPackedOpeningProof(
             packedChunkCount: try reader.readUInt32(),
             relationProof: try decodeShortLinearWitnessProof(from: &reader)
-        )
-    }
-
-    private static func encode(_ proof: HachiGeneralPCSOpeningProof, into writer: inout BinaryWriter) {
-        writer.append(proof.codewordIndex)
-        encode(proof.codewordValue, into: &writer)
-        writer.append(UInt32(clamping: proof.merkleAuthenticationPath.count))
-        for node in proof.merkleAuthenticationPath {
-            writer.appendLengthPrefixed(node)
-        }
-    }
-
-    private static func decodeGeneralOpening(from reader: inout BinaryReader) throws -> HachiGeneralPCSOpeningProof {
-        let codewordIndex = try reader.readUInt32()
-        let codewordValue = try decodeFq(from: &reader)
-        let pathCount = Int(try reader.readUInt32())
-        guard pathCount <= Limits.merklePathNodes else {
-            throw BinaryReader.Error.invalidData
-        }
-        var path = [[UInt8]]()
-        path.reserveCapacity(pathCount)
-        for _ in 0..<pathCount {
-            path.append(try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes))
-        }
-        return HachiGeneralPCSOpeningProof(
-            codewordIndex: codewordIndex,
-            codewordValue: codewordValue,
-            merkleAuthenticationPath: path
         )
     }
 
@@ -453,10 +406,8 @@ public enum SealProofCodec {
             encode(directPackedOuterCommitment, into: &writer)
         }
         writer.appendLengthPrefixed(commitment.tableDigest)
-        writer.appendLengthPrefixed(commitment.merkleRoot)
         writer.appendLengthPrefixed(commitment.parameterDigest)
         writer.append(commitment.valueCount)
-        writer.append(commitment.codewordLength)
         writer.append(commitment.packedChunkCount)
         writer.appendLengthPrefixed(commitment.statementDigest)
     }
@@ -475,17 +426,16 @@ public enum SealProofCodec {
             tableCommitment: try decodeCommitment(from: &reader),
             directPackedOuterCommitments: try decodeCommitmentArray(from: &reader),
             tableDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
-            merkleRoot: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
             parameterDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes),
             valueCount: try reader.readUInt32(),
-            codewordLength: try reader.readUInt32(),
             packedChunkCount: try reader.readUInt32(),
             statementDigest: try reader.readLengthPrefixedBytes(maxCount: Limits.digestBytes)
         )
     }
 
     private static func decodeCommitmentMode(from reader: inout BinaryReader) throws -> HachiPCSCommitmentMode {
-        guard let mode = HachiPCSCommitmentMode(rawValue: try reader.readUInt8()) else {
+        guard let mode = HachiPCSCommitmentMode(rawValue: try reader.readUInt8()),
+              mode == .directPacked else {
             throw BinaryReader.Error.invalidData
         }
         return mode

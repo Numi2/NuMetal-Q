@@ -46,8 +46,9 @@ public struct NuTranscriptSeal: Sendable {
     }
 
     public mutating func challengeScalar(label: String) -> Fq {
-        let raw = challengeBytes(label: label, count: MemoryLayout<UInt64>.size)
-        return Fq(LittleEndianCodec.uint64(from: raw) % Fq.modulus)
+        digest.absorbLabel("challenge")
+        digest.absorbLabel(label)
+        return digest.squeezeFieldElement()
     }
 
     public mutating func challengeVector(label: String, count: Int) -> [Fq] {
@@ -437,12 +438,13 @@ extension NuTranscriptField: NuFieldTranscript {
         absorbLabel(domain)
         absorb(field: Fq(UInt64(bytes.count)))
         let raw = [UInt8](bytes)
-        for chunkStart in stride(from: 0, to: raw.count, by: 8) {
-            var packed: UInt64 = 0
-            for index in chunkStart..<min(chunkStart + 8, raw.count) {
-                packed |= UInt64(raw[index]) << (UInt64(index - chunkStart) * 8)
+        for chunkStart in stride(from: 0, to: raw.count, by: 7) {
+            let chunk = Array(raw[chunkStart..<min(chunkStart + 7, raw.count)])
+            var packed: UInt64 = UInt64(chunk.count)
+            for (index, byte) in chunk.enumerated() {
+                packed |= UInt64(byte) << (UInt64(index) * 8 + 8)
             }
-            absorb(field: Fq(packed % Fq.modulus))
+            absorb(field: Fq(packed))
         }
     }
 

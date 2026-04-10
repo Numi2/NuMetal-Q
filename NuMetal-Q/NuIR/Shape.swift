@@ -54,6 +54,7 @@ public struct Shape: Sendable {
             publicHeaderSize: publicHeaderSize,
             defaultArity: defaultArity
         )
+        precondition(digest == canonicalDigest, "shape digest mismatch")
         self.digest = canonicalDigest
         self.name = name
         self.relation = relation
@@ -188,7 +189,7 @@ public enum ShapePackSigning: Sendable {
 /// Build-time-compiled, signed asset bundle containing everything needed
 /// to execute a shape on device without runtime CCS matrix lifting.
 public struct ShapePack: Sendable {
-    public static let currentVersion: UInt16 = 3
+    public static let currentVersion: UInt16 = 4
 
     /// Versioned GPU artifact ABI.
     public let version: UInt16

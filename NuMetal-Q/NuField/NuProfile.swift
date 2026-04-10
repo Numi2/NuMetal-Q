@@ -308,8 +308,7 @@ public struct HachiDeciderCertificate: Sendable, Hashable, Codable {
 }
 
 public struct SecurityReleasePolicy: Sendable, Hashable, Codable {
-    public let minimumRawSecurityBits: Int
-    public let minimumComposedSecurityBits: Int
+    public let informationalOnly: Bool
     public let checkedAttackModels: [String]
     public let enforcedLossTerms: [SecurityLossTerm]
     public let notes: [String]
@@ -515,8 +514,7 @@ public struct ProfileCertificate: Sendable, Codable {
             "batching and depth composition",
         ]
         let releasePolicy = SecurityReleasePolicy(
-            minimumRawSecurityBits: 0,
-            minimumComposedSecurityBits: 0,
+            informationalOnly: true,
             checkedAttackModels: checkedAttackModels,
             enforcedLossTerms: searchTranscript.candidates[searchTranscript.selectedIndex].lossTerms,
             notes: [
@@ -675,8 +673,7 @@ public struct ProfileCertificate: Sendable, Codable {
                 "provenance_digest",
             ]
             && hachiDecider.exportedEnvelopeLayer == "application-signing-and-transport"
-            && releasePolicy.minimumRawSecurityBits == 0
-            && releasePolicy.minimumComposedSecurityBits == 0
+            && releasePolicy.informationalOnly
             && releasePolicy.checkedAttackModels == [
                 "baseline lattice estimator workbook",
                 "module-structure correction",

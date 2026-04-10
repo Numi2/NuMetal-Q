@@ -156,7 +156,7 @@ public actor FoldVault {
 
     // MARK: - Serialization
 
-    private static let vaultHeader = Data("NuMeQFv6".utf8)
+    private static let vaultHeader = Data("NuMeQFv7".utf8)
 
     private func vaultAssociatedData(for chainID: UUID) -> Data {
         var data = Data("NuMeQ.FoldVault.Entry.v1".utf8)
@@ -248,6 +248,10 @@ public actor FoldVault {
         for pi in state.publicInputs {
             data.append(contentsOf: pi.toBytes())
         }
+
+        var publicHeaderLength = UInt32(state.publicHeader.count)
+        data.append(contentsOf: withUnsafeBytes(of: &publicHeaderLength) { Data($0) })
+        data.append(state.publicHeader)
 
         // Recursive state mode
         data.append(state.kind.rawValue)
@@ -367,6 +371,13 @@ public actor FoldVault {
             guard let fq = Fq.fromBytes(fqBytes) else { throw VaultError.corruptedData }
             publicInputs.append(fq)
         }
+
+        let publicHeaderLength = try Self.readFixedWidthInteger(from: slice, offset: &offset, as: UInt32.self)
+        guard offset + Int(publicHeaderLength) <= slice.count else {
+            throw VaultError.corruptedData
+        }
+        let publicHeader = Data(slice[offset..<offset + Int(publicHeaderLength)])
+        offset += Int(publicHeaderLength)
 
         guard offset + 1 <= slice.count else { throw VaultError.corruptedData }
         guard let kind = FoldStateKind(rawValue: slice[offset]) else {
@@ -518,6 +529,7 @@ public actor FoldVault {
             commitment: commitment,
             accumulatedWitness: witness,
             publicInputs: publicInputs,
+            publicHeader: publicHeader,
             statementCount: statementCount,
             normBudget: normBudget,
             errorTerms: errorTerms,

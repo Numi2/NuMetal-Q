@@ -45,7 +45,11 @@ extension ProofContext {
         }
     }
 
-    func validateSeedInputs(witness: Witness, publicInputs: [Fq]) throws {
+    func validateSeedInputs(
+        witness: Witness,
+        publicInputs: [Fq],
+        publicHeader: Data
+    ) throws {
         try witness.validateSemanticIntegrity()
 
         let expectedLanes = compiledShape.shape.lanes
@@ -72,6 +76,12 @@ extension ProofContext {
             throw ProofContextError.invalidPublicInputCount(
                 expected: expectedPublicCount,
                 actual: publicInputs.count
+            )
+        }
+        guard publicHeader.count == compiledShape.shape.publicHeaderSize else {
+            throw ProofContextError.invalidPublicHeaderSize(
+                expected: compiledShape.shape.publicHeaderSize,
+                actual: publicHeader.count
             )
         }
 

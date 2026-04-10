@@ -96,8 +96,16 @@ extension Fq {
     }
 
     /// Modular inverse via Fermat's little theorem: a^(q-2) mod q.
-    public func inverse() -> Fq {
-        pow(Self.modulus &- 2)
+    ///
+    /// Returns `nil` for zero so callers cannot silently treat `0` as invertible.
+    public func inverted() -> Fq? {
+        guard isZero == false else { return nil }
+        return pow(Self.modulus &- 2)
+    }
+
+    func uncheckedInverse() -> Fq {
+        precondition(isZero == false, "zero is not invertible in Fq")
+        return pow(Self.modulus &- 2)
     }
 
     /// Check if this element is zero.

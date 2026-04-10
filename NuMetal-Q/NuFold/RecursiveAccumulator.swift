@@ -3,6 +3,7 @@ import Foundation
 internal struct CCSClaim: Sendable, Codable, Equatable {
     let commitment: AjtaiCommitment
     let publicInputs: [Fq]
+    let publicHeader: Data
     let witnessRingCount: UInt32
     let witnessFieldCount: UInt32
 }
@@ -102,7 +103,7 @@ internal enum FoldAccumulatorNodeKind: UInt8, Sendable, Codable, Equatable {
 }
 
 internal struct FoldAccumulator: Sendable, Codable, Equatable {
-    static let currentVersion: UInt16 = 4
+    static let currentVersion: UInt16 = 5
 
     let version: UInt16
     let epoch: UInt64
@@ -174,6 +175,17 @@ internal struct FoldAccumulator: Sendable, Codable, Equatable {
         }
     }
 
+    func leafPublicHeader() -> Data {
+        switch nodeKind {
+        case .seed:
+            return seed?.sourceClaim.publicHeader ?? Data()
+        case .fold:
+            return fold?.childAccumulators.reduce(into: Data()) { partial, child in
+                partial.append(child.leafPublicHeader())
+            } ?? Data()
+        }
+    }
+
     func leafWitnessFieldVector() throws -> [Fq] {
         switch nodeKind {
         case .seed:
@@ -225,6 +237,7 @@ internal struct FoldAccumulator: Sendable, Codable, Equatable {
                   seed.openingWitness.decompBase == NuProfile.canonical.decompBase,
                   seed.openingWitness.decompLimbs == NuProfile.canonical.decompLimbs,
                   seed.openingWitness.witnessRingCount == seed.sourceClaim.witnessRingCount,
+                  seed.sourceClaim.publicHeader.isEmpty == false || seed.sourceClaim.publicInputs.isEmpty,
                   seed.sourceClaim.commitment == seed.reducedClaim.commitment,
                   seed.sourceClaim.publicInputs == seed.reducedClaim.publicInputs else {
                 throw RecursiveAccumulatorError.invalidNodeShape
@@ -232,7 +245,7 @@ internal struct FoldAccumulator: Sendable, Codable, Equatable {
         case .fold:
             guard let fold,
                   seed == nil,
-                  arity > 1,
+                  arity == 2,
                   fold.childAccumulators.count == Int(arity),
                   fold.foldedClaim.kind == .piRLCFolded,
                   fold.openingWitness.decompBase == NuProfile.canonical.decompBase,

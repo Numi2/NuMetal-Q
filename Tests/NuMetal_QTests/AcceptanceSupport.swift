@@ -130,6 +130,14 @@ enum AcceptanceSupport {
         SymmetricKey(data: Data(repeating: 0xA5, count: 32))
     }
 
+    static func packedPublicHeader(_ publicInputs: [Fq]) -> Data {
+        var writer = BinaryWriter()
+        for value in publicInputs {
+            writer.append(value.v)
+        }
+        return writer.data
+    }
+
     static func makeEngine(file: StaticString = #filePath, line: UInt = #line) async throws -> NuMeQ {
         do {
             return try await NuMeQ()
@@ -175,7 +183,7 @@ enum AcceptanceSupport {
     }
 
     static func samplePiRLCInputs(key: AjtaiKey, seed: UInt64 = 100) -> [PiRLC.Input] {
-        (0..<3).map { inputIndex in
+        (0..<2).map { inputIndex in
             let witness = (0..<4).map { ringIndex in
                 randomRing(
                     seed: seed &+ UInt64(inputIndex) &* 17,

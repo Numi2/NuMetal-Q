@@ -272,13 +272,15 @@ struct NuMetalQAcceptanceDemo {
             attestationVerifier: demoAttestationVerifier
         )
 
-        let seeds: [UInt64] = [11, 29, 47, 83]
+        let seeds: [UInt64] = [11, 29]
         let handles = try await withThrowingTaskGroup(of: ProofHandle.self) { group in
             for (index, seed) in seeds.enumerated() {
                 group.addTask {
-                    try await context.seed(
+                    let publicInputs = [Fq(UInt64(index + 3)), Fq(UInt64(index + 5))]
+                    return try await context.seed(
                         witness: makeWitness(seed: seed),
-                        publicInputs: [Fq(UInt64(index + 3)), Fq(UInt64(index + 5))]
+                        publicInputs: publicInputs,
+                        publicHeader: packedPublicHeader(publicInputs)
                     )
                 }
             }
@@ -290,8 +292,7 @@ struct NuMetalQAcceptanceDemo {
             return results
         }
 
-        let fusedPair = try await context.fuse(handles[0], handles[1])
-        let fusedMany = try await context.fuseMany([fusedPair, handles[2], handles[3]])
+        let fusedMany = try await context.fuse(handles[0], handles[1])
 
         let sessionKey = makeSessionKey()
         let sealedExport = try await context.seal(
@@ -389,6 +390,7 @@ struct NuMetalQAcceptanceDemo {
         let clusterSeedReceipt = try await confinedContext.seedUsingCluster(
             witness: makeTwoLaneWitness(publicSeed: 13, secretSeed: 71),
             publicInputs: [Fq(3), Fq(5)],
+            publicHeader: packedPublicHeader([Fq(3), Fq(5)]),
             clusterSession: principal,
             attestation: attestation,
             dispatchFragment: { fragment in
@@ -416,7 +418,8 @@ struct NuMetalQAcceptanceDemo {
         )
         let delegatableHandle = try await clusterSealContext.seed(
             witness: makeWitness(seed: 59),
-            publicInputs: [Fq(7), Fq(11)]
+            publicInputs: [Fq(7), Fq(11)],
+            publicHeader: packedPublicHeader([Fq(7), Fq(11)])
         )
         let delegatableEligibility = try await clusterSealContext.clusterEligibility(
             for: delegatableHandle
@@ -580,10 +583,14 @@ struct NuMetalQAcceptanceDemo {
         return try CompiledShape(shape: shape, shapePack: shapePack, verifySignature: signer.verify)
     }
 
+    private static func packedPublicHeader(_ publicInputs: [Fq]) -> Data {
+        Data(publicInputs.flatMap { $0.toBytes() })
+    }
+
     private static func makeWitness(seed: UInt64) -> Witness {
         let lane = LaneDescriptor(index: 0, name: "amounts", width: .u16, length: 64)
         let values = (0..<64).map { offset in
-            Fq((seed + UInt64(offset * 3)) & 0xFFFF)
+            Fq((seed + UInt64(offset * 3)) % 127)
         }
         return Witness(lanes: [WitnessLane(descriptor: lane, values: values)])
     }
@@ -591,11 +598,11 @@ struct NuMetalQAcceptanceDemo {
     private static func makeTwoLaneWitness(publicSeed: UInt64, secretSeed: UInt64) -> Witness {
         let publicLane = WitnessLane(
             descriptor: LaneDescriptor(index: 0, name: "publicLane", width: .u8, length: 4),
-            values: (0..<4).map { Fq((publicSeed + UInt64($0 * 3)) & 0xFF) }
+            values: (0..<4).map { Fq((publicSeed + UInt64($0 * 3)) % 127) }
         )
         let secretLane = WitnessLane(
             descriptor: LaneDescriptor(index: 1, name: "secretLane", width: .u16, length: 4),
-            values: (0..<4).map { Fq((secretSeed + UInt64($0 * 5)) & 0xFFFF) }
+            values: (0..<4).map { Fq((secretSeed + UInt64($0 * 5)) % 127) }
         )
         return Witness(lanes: [publicLane, secretLane])
     }

@@ -3,7 +3,7 @@
 // ΠRLC is the WEAK interactive reduction that performs a random
 // linear combination over challenges from the strong sampling set C.
 //
-// Given k CCS instances, PiRLC folds them into a single relaxed CCS
+// Given two CCS instances, PiRLC folds them into a single relaxed CCS
 // instance via random ring challenges sampled from C = {-1, 0, 1, 2}.
 
 /// PiRLC protocol stage: fold multiple CCS instances into one.
@@ -77,30 +77,20 @@ public struct PiRLC: Sendable {
         }
     }
 
-    /// Execute PiRLC prover on a batch of instances.
+    /// Execute PiRLC prover on a binary pair of instances.
     public static func prove(
         inputs: [Input],
         key: AjtaiKey,
         transcript: inout NuTranscriptField
     ) -> Output {
         let k = inputs.count
-        precondition(k >= 2, "PiRLC requires at least 2 instances")
+        precondition(k == 2, "PiRLC requires exactly 2 instances")
         precondition(hasCompatibleErrorShapes(inputs), "PiRLC error term shape mismatch")
 
         transcript.absorbLabel("PiRLC_k=\(k)")
         absorb(inputs: inputs, into: &transcript)
 
-        // Compute cross-terms T_j for j = 1..k-1
-        var crossTerms = [[RingElement]]()
-        for j in 1..<k {
-            var cross = [RingElement]()
-            let w0 = inputs[0].witness
-            let wj = inputs[j].witness
-            for idx in 0..<min(w0.count, wj.count) {
-                cross.append(w0[idx] * wj[idx])
-            }
-            crossTerms.append(cross)
-        }
+        let crossTerms = computeCrossTerms(inputs: inputs)
 
         let crossCommitments = crossTerms.map { terms in
             AjtaiCommitter.commit(key: key, witness: terms)
@@ -173,22 +163,13 @@ public struct PiRLC: Sendable {
         context: MetalContext
     ) async throws -> Output {
         let k = inputs.count
-        precondition(k >= 2, "PiRLC requires at least 2 instances")
+        precondition(k == 2, "PiRLC requires exactly 2 instances")
         precondition(hasCompatibleErrorShapes(inputs), "PiRLC error term shape mismatch")
 
         transcript.absorbLabel("PiRLC_k=\(k)")
         absorb(inputs: inputs, into: &transcript)
 
-        var crossTerms = [[RingElement]]()
-        for j in 1..<k {
-            var cross = [RingElement]()
-            let w0 = inputs[0].witness
-            let wj = inputs[j].witness
-            for idx in 0..<min(w0.count, wj.count) {
-                cross.append(w0[idx] * wj[idx])
-            }
-            crossTerms.append(cross)
-        }
+        let crossTerms = computeCrossTerms(inputs: inputs)
 
         var crossCommitments = [AjtaiCommitment]()
         crossCommitments.reserveCapacity(crossTerms.count)
@@ -259,7 +240,7 @@ public struct PiRLC: Sendable {
         transcript: inout NuTranscriptField
     ) -> Bool {
         let k = inputs.count
-        guard k >= 2 else { return false }
+        guard k == 2 else { return false }
         guard allInputsShareShape(inputs) else { return false }
         guard hasCompatibleErrorShapes(inputs) else { return false }
         transcript.absorbLabel("PiRLC_k=\(k)")
@@ -324,7 +305,7 @@ public struct PiRLC: Sendable {
         trace: MetalTraceCollector?
     ) throws -> Bool {
         let k = inputs.count
-        guard k >= 2 else { return false }
+        guard k == 2 else { return false }
         guard allInputsShareShape(inputs) else { return false }
         guard hasCompatibleErrorShapes(inputs) else { return false }
 
@@ -455,16 +436,14 @@ public struct PiRLC: Sendable {
     }
 
     private static func computeCrossTerms(inputs: [Input]) -> [[RingElement]] {
-        let k = inputs.count
-        guard k >= 2 else { return [] }
-
-        return (1..<k).map { j in
-            let w0 = inputs[0].witness
-            let wj = inputs[j].witness
-            return (0..<min(w0.count, wj.count)).map { index in
-                w0[index] * wj[index]
+        guard inputs.count == 2 else { return [] }
+        let lhs = inputs[0].witness
+        let rhs = inputs[1].witness
+        return [
+            (0..<min(lhs.count, rhs.count)).map { index in
+                lhs[index] * rhs[index]
             }
-        }
+        ]
     }
 
     private static func computeCrossTermsMetal(
@@ -479,22 +458,21 @@ public struct PiRLC: Sendable {
         context: MetalContext,
         trace: MetalTraceCollector?
     ) throws -> [[RingElement]] {
-        guard inputs.count >= 2 else { return [] }
+        guard inputs.count == 2 else { return [] }
 
         var lhs = [RingElement]()
         var rhs = [RingElement]()
         var spans = [Range<Int>]()
-        lhs.reserveCapacity((inputs.count - 1) * inputs[0].witness.count)
+        lhs.reserveCapacity(inputs[0].witness.count)
         rhs.reserveCapacity(lhs.capacity)
 
         let baselineWitness = inputs[0].witness
-        for input in inputs.dropFirst() {
-            let start = lhs.count
-            let count = min(baselineWitness.count, input.witness.count)
-            lhs.append(contentsOf: baselineWitness.prefix(count))
-            rhs.append(contentsOf: input.witness.prefix(count))
-            spans.append(start..<(start + count))
-        }
+        let pairedWitness = inputs[1].witness
+        let start = lhs.count
+        let count = min(baselineWitness.count, pairedWitness.count)
+        lhs.append(contentsOf: baselineWitness.prefix(count))
+        rhs.append(contentsOf: pairedWitness.prefix(count))
+        spans.append(start..<(start + count))
 
         let products = try AG64RingMetal.multiplyBatch(
             context: context,
@@ -592,10 +570,13 @@ public struct PiRLC: Sendable {
             }
         }
 
-        for crossIndex in crossTerms.indices {
-            let rho = ringChallenges[crossIndex + 1]
-            for errorIndex in crossTerms[crossIndex].indices {
-                foldedError[errorIndex] += rho * crossTerms[crossIndex][errorIndex]
+        guard crossTerms.count <= 1, ringChallenges.count == 2 else {
+            return foldedError
+        }
+        if let crossTerm = crossTerms.first {
+            let crossWeight = ringChallenges[0] * ringChallenges[1]
+            for errorIndex in crossTerm.indices {
+                foldedError[errorIndex] += crossWeight * crossTerm[errorIndex]
             }
         }
 

@@ -55,8 +55,12 @@ public actor ProofContext {
     ///
     /// This is the leaf of the proof DAG. The witness is consumed
     /// and never stored in cleartext.
-    public func seed(witness: Witness, publicInputs: [Fq]) async throws -> ProofHandle {
-        try validateSeedInputs(witness: witness, publicInputs: publicInputs)
+    public func seed(
+        witness: Witness,
+        publicInputs: [Fq],
+        publicHeader: Data
+    ) async throws -> ProofHandle {
+        try validateSeedInputs(witness: witness, publicInputs: publicInputs, publicHeader: publicHeader)
         let witnessClass = maxWitnessClass(for: witness)
         let state: FoldState
         do {
@@ -64,6 +68,7 @@ public actor ProofContext {
                 shape: compiledShape.shape,
                 witness: witness,
                 publicInputs: publicInputs,
+                publicHeader: publicHeader,
                 witnessClass: witnessClass
             )
         } catch FoldEngineError.witnessExceedsPiDECRepresentability(let maxMagnitude, let base, let limbs) {
@@ -86,11 +91,12 @@ public actor ProofContext {
     public func seedUsingCluster(
         witness: Witness,
         publicInputs: [Fq],
+        publicHeader: Data,
         clusterSession: ClusterSession,
-        attestation: Data,
+        attestation: Data? = nil,
         dispatchFragment: @Sendable (JobFragment) async throws -> FragmentResult
     ) async throws -> ClusterSeedReceipt {
-        try validateSeedInputs(witness: witness, publicInputs: publicInputs)
+        try validateSeedInputs(witness: witness, publicInputs: publicInputs, publicHeader: publicHeader)
         let keyParameters = await foldEngine.clusterKeyParameters()
         let delegation: DelegationPayload
         do {
@@ -135,6 +141,7 @@ public actor ProofContext {
                 commitment: materialized.commitment,
                 packedWitness: materialized.packedWitness,
                 publicInputs: publicInputs,
+                publicHeader: publicHeader,
                 witnessClass: witnessClass
             )
         } catch FoldEngineError.witnessExceedsPiDECRepresentability(let maxMagnitude, let base, let limbs) {
@@ -210,12 +217,10 @@ public actor ProofContext {
         try await prepareStateForSealing(state)
         try requireExportEligibility(attestation: attestation)
 
-        let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
-
         let sealProof = try await sealBackend.seal(
             state: state,
             shape: compiledShape.shape,
-            publicHeader: publicHeader
+            publicHeader: state.publicHeader
         )
 
         let builder = EnvelopeBuilder(
@@ -266,11 +271,10 @@ public actor ProofContext {
         try await prepareStateForSealing(state)
         try requireExportEligibility(attestation: attestation)
 
-        let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
         let sealProof = try await sealBackend.seal(
             state: state,
             shape: compiledShape.shape,
-            publicHeader: publicHeader
+            publicHeader: state.publicHeader
         )
 
         let builder = EnvelopeBuilder(
@@ -325,11 +329,10 @@ public actor ProofContext {
         try requireExportEligibility(attestation: attestation)
         try requireClusterEligibility(for: state, attestation: attestation)
 
-        let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
         let sealProof = try await sealBackend.sealUsingCluster(
             state: state,
             shape: compiledShape.shape,
-            publicHeader: publicHeader,
+            publicHeader: state.publicHeader,
             clusterSession: clusterSession,
             attestation: attestation,
             dispatchFragment: dispatchFragment
@@ -384,11 +387,10 @@ public actor ProofContext {
         try requireExportEligibility(attestation: attestation)
         try requireClusterEligibility(for: state, attestation: attestation)
 
-        let publicHeader = Data(state.publicInputs.flatMap { $0.toBytes() })
         let sealProof = try await sealBackend.sealUsingCluster(
             state: state,
             shape: compiledShape.shape,
-            publicHeader: publicHeader,
+            publicHeader: state.publicHeader,
             clusterSession: clusterSession,
             attestation: attestation,
             dispatchFragment: dispatchFragment

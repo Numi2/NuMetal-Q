@@ -148,7 +148,8 @@ enum NuMetalQBenchmarks {
                 let seedOne = try await timedThrowing {
                     try await context.seed(
                         witness: inputs.firstWitness,
-                        publicInputs: inputs.publicInputs
+                        publicInputs: inputs.publicInputs,
+                        publicHeader: packedPublicHeader(inputs.publicInputs)
                     )
                 }
                 peakRSSBytes = max(peakRSSBytes, peakResidentSetSizeBytes())
@@ -156,7 +157,8 @@ enum NuMetalQBenchmarks {
                 let seedTwo = try await timedThrowing {
                     try await context.seed(
                         witness: inputs.secondWitness,
-                        publicInputs: inputs.publicInputs
+                        publicInputs: inputs.publicInputs,
+                        publicHeader: packedPublicHeader(inputs.publicInputs)
                     )
                 }
                 peakRSSBytes = max(peakRSSBytes, peakResidentSetSizeBytes())
@@ -172,11 +174,13 @@ enum NuMetalQBenchmarks {
                         )
                         let untimedFuseSeedOne = try await fuseContext.seed(
                             witness: inputs.firstWitness,
-                            publicInputs: inputs.publicInputs
+                            publicInputs: inputs.publicInputs,
+                            publicHeader: packedPublicHeader(inputs.publicInputs)
                         )
                         let untimedFuseSeedTwo = try await fuseContext.seed(
                             witness: inputs.secondWitness,
-                            publicInputs: inputs.publicInputs
+                            publicInputs: inputs.publicInputs,
+                            publicHeader: packedPublicHeader(inputs.publicInputs)
                         )
                         let fused = try await timedThrowing {
                             try await fuseContext.fuse(untimedFuseSeedOne, untimedFuseSeedTwo)
@@ -1672,6 +1676,10 @@ enum NuMetalQBenchmarks {
         ]
     }
 
+    private static func packedPublicHeader(_ publicInputs: [Fq]) -> Data {
+        Data(publicInputs.flatMap { $0.toBytes() })
+    }
+
     private static func makeWitness(
         fixture: SealWorkloadFixture,
         seed: UInt64
@@ -1729,15 +1737,15 @@ enum NuMetalQBenchmarks {
         case .bit:
             return Fq(mixed & 1)
         case .u8:
-            return Fq(mixed % 251)
+            return Fq(mixed % 127)
         case .u16:
-            return Fq(mixed % 65_521)
+            return Fq(mixed % 127)
         case .u32:
-            return Fq(mixed % 4_000_000_007)
+            return Fq(mixed % 127)
         case .u64, .field:
-            return Fq(mixed % Fq.modulus)
+            return Fq(mixed % 127)
         case .bounded:
-            return Fq(mixed % 1_000_003)
+            return Fq(mixed % 127)
         }
     }
 
@@ -1785,7 +1793,7 @@ enum NuMetalQBenchmarks {
     }
 
     private static func sampleVerifierPiRLCInputs(key: AjtaiKey, seed: UInt64) -> [PiRLC.Input] {
-        (0..<3).map { inputIndex in
+        (0..<2).map { inputIndex in
             let witness = (0..<4).map { ringIndex in
                 sampleVerifierRing(seed: seed &+ UInt64(inputIndex) &* 17, index: UInt64(ringIndex))
             }

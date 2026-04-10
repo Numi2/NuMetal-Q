@@ -3,6 +3,10 @@ import Foundation
 // MARK: - Canonical Metal ABI
 // Versioned host/device layout for the Metal-first proving path.
 
+public enum MetalABI {
+    public static let currentVersion: UInt16 = 1
+}
+
 public enum MetalStorageLayout {
     public static let currentVersion: UInt16 = 3
     public static let threadExecutionWidthMultiple: UInt8 = 1

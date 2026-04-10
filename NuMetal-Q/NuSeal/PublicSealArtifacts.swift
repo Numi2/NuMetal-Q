@@ -36,7 +36,7 @@ public struct PublicSealStatement: Sendable, Codable, Equatable {
 }
 
 public struct PublicSealProof: Sendable, Codable {
-    public static let currentVersion: UInt16 = 4
+    public static let currentVersion: UInt16 = 5
 
     public let version: UInt16
     public let statement: PublicSealStatement
@@ -91,7 +91,7 @@ public struct NormBudgetSnapshot: Sendable, Codable, Equatable {
 }
 
 internal struct ResumePayload: Sendable, Codable, Equatable {
-    static let currentVersion: UInt16 = 1
+    static let currentVersion: UInt16 = 2
 
     let version: UInt16
     let accumulatorArtifact: Data

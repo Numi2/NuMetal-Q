@@ -61,8 +61,10 @@ extension Fq4 {
         return a * a - eta * (b * b)
     }
 
-    public func inverse() -> Fq4 {
-        let inverseNorm = norm.inverse()
+    public func inverted() -> Fq4? {
+        guard let inverseNorm = norm.inverted() else {
+            return nil
+        }
         return Fq4(a: a * inverseNorm, b: (-b) * inverseNorm)
     }
 

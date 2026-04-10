@@ -161,7 +161,6 @@ public final class KernelDispatcher: @unchecked Sendable {
         fallback: Double?
     ) -> Double? {
         guard let counterSamples,
-              let fallback,
               counterSamples.end > counterSamples.start else {
             return fallback
         }
@@ -170,7 +169,7 @@ public final class KernelDispatcher: @unchecked Sendable {
         guard tickDelta > 0 else {
             return fallback
         }
-        return fallback
+        return tickDelta / 1_000_000.0
     }
 
     private func gpuOffsetsMicroseconds(

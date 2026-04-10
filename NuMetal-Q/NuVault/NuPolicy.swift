@@ -261,7 +261,7 @@ extension NuPolicy {
                 message: "Cluster delegation is disabled by policy"
             )
         }
-        guard let attestation, !attestation.isEmpty else {
+        if delegationRequiresAttestation && (attestation?.isEmpty != false) {
             throw PolicyViolation(
                 kind: .attestationRequired,
                 laneID: nil,
@@ -278,7 +278,7 @@ extension NuPolicy {
             payload: try encode(stripped.delegatable),
             laneClasses: laneClassMap,
             confinedIndices: stripped.confinedIndices,
-            attestation: attestation
+            attestation: attestation ?? Data()
         )
     }
 }

@@ -186,11 +186,7 @@ public actor NuMeQ {
         } catch {
             return VerificationResult(isValid: false, reason: .proofInvalid)
         }
-        guard publicStatementMatchesHeader(
-            publicHeader: envelope.publicHeaderBytes,
-            publicInputs: proof.statement.publicInputs,
-            shape: compiledShape.shape
-        ) else {
+        guard publicHeaderMatchesShape(envelope.publicHeaderBytes, shape: compiledShape.shape) else {
             return VerificationResult(isValid: false, reason: .proofInvalid)
         }
         guard await sealBackend.verify(

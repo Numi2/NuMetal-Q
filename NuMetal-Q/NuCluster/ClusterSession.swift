@@ -142,7 +142,6 @@ public actor ClusterSession {
     ) throws -> JobFragment {
         guard role == .principal else { throw ClusterError.wrongRole }
         guard state.isActive else { throw ClusterError.notPaired }
-        guard !delegation.attestation.isEmpty else { throw ClusterError.attestationRequired }
         guard foldArity > 0 else { throw ClusterError.invalidFragment }
 
         let fragment = JobFragment(
@@ -153,7 +152,7 @@ public actor ClusterSession {
             encryptedPayload: try encrypt(delegation.payload),
             laneClasses: delegation.laneClasses,
             confinedIndices: delegation.confinedIndices,
-            attestation: delegation.attestation,
+            attestation: delegation.attestation.isEmpty ? nil : delegation.attestation,
             timestamp: Date()
         )
         try verifyAttestation(fragment, purpose: .clusterDelegation)
@@ -171,11 +170,10 @@ public actor ClusterSession {
     public func createSealFragment(
         shapeDigest: ShapeDigest,
         vaultEncryptedWorkPackage: Data,
-        attestation: Data
+        attestation: Data? = nil
     ) throws -> JobFragment {
         guard role == .principal else { throw ClusterError.wrongRole }
         guard state.isActive else { throw ClusterError.notPaired }
-        guard !attestation.isEmpty else { throw ClusterError.attestationRequired }
 
         let fragment = JobFragment(
             fragmentID: UUID(),
@@ -185,7 +183,7 @@ public actor ClusterSession {
             encryptedPayload: try encrypt(vaultEncryptedWorkPackage),
             laneClasses: [:],
             confinedIndices: [],
-            attestation: attestation,
+            attestation: attestation?.isEmpty == false ? attestation : nil,
             timestamp: Date()
         )
         try verifyAttestation(fragment, purpose: .clusterDelegation)
@@ -200,11 +198,10 @@ public actor ClusterSession {
     public func createDecomposeFragment(
         shapeDigest: ShapeDigest,
         workPackage: Data,
-        attestation: Data
+        attestation: Data? = nil
     ) throws -> JobFragment {
         guard role == .principal else { throw ClusterError.wrongRole }
         guard state.isActive else { throw ClusterError.notPaired }
-        guard !attestation.isEmpty else { throw ClusterError.attestationRequired }
 
         let fragment = JobFragment(
             fragmentID: UUID(),
@@ -214,7 +211,7 @@ public actor ClusterSession {
             encryptedPayload: try encrypt(workPackage),
             laneClasses: [:],
             confinedIndices: [],
-            attestation: attestation,
+            attestation: attestation?.isEmpty == false ? attestation : nil,
             timestamp: Date()
         )
         try verifyAttestation(fragment, purpose: .clusterDelegation)
@@ -237,10 +234,6 @@ public actor ClusterSession {
         let signingPayload = fragment.signingPayload()
         try verifySignatureIfNeeded(payload: signingPayload, signature: fragment.signature)
         try bindRemoteSessionIfNeeded(fragment.sessionID)
-        guard let attestation = fragment.attestation, !attestation.isEmpty else {
-            throw ClusterError.attestationRequired
-        }
-        _ = attestation
         try verifyAttestation(fragment, purpose: .clusterDelegation)
         if let processedPayload = processedFragmentPayloads[fragment.fragmentID] {
             guard processedPayload == signingPayload,
@@ -271,7 +264,7 @@ public actor ClusterSession {
             shapeDigest: fragment.shapeDigest,
             laneClasses: fragment.laneClasses,
             confinedIndices: fragment.confinedIndices,
-            attestation: attestation
+            attestation: fragment.attestation
         )
         let processed = try await execute(fragment.kind, payload: decrypted, context: context)
         let result = FragmentResult(
@@ -417,7 +410,7 @@ public actor ClusterSession {
         purpose: AttestationPurpose
     ) throws {
         guard let attestation = fragment.attestation, attestation.isEmpty == false else {
-            throw ClusterError.attestationRequired
+            return
         }
         guard let attestationVerifier else {
             throw ClusterError.attestationVerifierMissing
@@ -681,14 +674,14 @@ public struct ClusterWorkContext: Sendable {
     public let shapeDigest: ShapeDigest
     public let laneClasses: [String: WitnessClass]
     public let confinedIndices: [Int]
-    public let attestation: Data
+    public let attestation: Data?
 
     public init(
         sessionID: UUID,
         shapeDigest: ShapeDigest,
         laneClasses: [String: WitnessClass],
         confinedIndices: [Int],
-        attestation: Data
+        attestation: Data?
     ) {
         self.sessionID = sessionID
         self.shapeDigest = shapeDigest

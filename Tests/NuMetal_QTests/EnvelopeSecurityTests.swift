@@ -18,7 +18,8 @@ final class EnvelopeSecurityTests: XCTestCase {
         )
         let handle = try await context.seed(
             witness: AcceptanceSupport.makeWitness(seed: 13),
-            publicInputs: [Fq(5), Fq(9)]
+            publicInputs: [Fq(5), Fq(9)],
+            publicHeader: AcceptanceSupport.packedPublicHeader([Fq(5), Fq(9)])
         )
 
         do {
@@ -57,14 +58,26 @@ final class EnvelopeSecurityTests: XCTestCase {
         }
     }
 
-    func testPublicStatementBindingRejectsMismatchedHeaderEncoding() throws {
+    func testPublicHeaderValidationRejectsMismatchedHeaderSize() throws {
         let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "HeaderBindingMismatch")
-        let mismatchedHeader = Data([1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0])
+        let mismatchedHeader = Data([1, 2, 3])
 
         XCTAssertFalse(
-            publicStatementMatchesHeader(
-                publicHeader: mismatchedHeader,
-                publicInputs: [Fq(1), Fq(3)],
+            publicHeaderMatchesShape(
+                mismatchedHeader,
+                shape: compiledShape.shape
+            )
+        )
+    }
+
+    func testPublicHeaderValidationAcceptsAggregateHeaderLengthMultiple() throws {
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "AggregateHeaderLength")
+        let aggregateHeader = AcceptanceSupport.packedPublicHeader([Fq(1), Fq(3)])
+            + AcceptanceSupport.packedPublicHeader([Fq(5), Fq(7)])
+
+        XCTAssertTrue(
+            publicHeaderMatchesShape(
+                aggregateHeader,
                 shape: compiledShape.shape
             )
         )
@@ -225,7 +238,8 @@ final class EnvelopeSecurityTests: XCTestCase {
         )
         let handle = try await context.seed(
             witness: AcceptanceSupport.makeWitness(seed: 17),
-            publicInputs: [Fq(8), Fq(13)]
+            publicInputs: [Fq(8), Fq(13)],
+            publicHeader: AcceptanceSupport.packedPublicHeader([Fq(8), Fq(13)])
         )
 
         do {
@@ -306,7 +320,8 @@ final class EnvelopeSecurityTests: XCTestCase {
         do {
             _ = try await context.seed(
                 witness: witness,
-                publicInputs: [Fq(12), Fq(5)]
+                publicInputs: [Fq(12), Fq(5)],
+                publicHeader: AcceptanceSupport.packedPublicHeader([Fq(12), Fq(5)])
             )
             XCTFail("Expected constrained relation to reject mismatched public input")
         } catch let error as FoldEngineError {
@@ -325,10 +340,9 @@ private func makeMinimalPublicSealProof(instanceCount: UInt32) -> PublicSealProo
         oracle: .witness(),
         tableCommitment: AjtaiCommitment(value: .zero),
         tableDigest: [],
-        merkleRoot: [],
         parameterDigest: [],
         valueCount: 0,
-        codewordLength: 0
+        packedChunkCount: 0
     )
     let openingProof = HachiPCSBatchOpeningProof(batchSeedDigest: [], classes: [])
     let terminalProof = HachiTerminalProof(

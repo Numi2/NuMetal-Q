@@ -86,8 +86,10 @@ extension Fq2 {
     public var norm: Fq { a * a - Fq2.beta * (b * b) }
 
     /// Inverse: (a + b·u)^(-1) = conj / norm  where norm = a² − β·b²
-    public func inverse() -> Fq2 {
-        let n = norm.inverse()
+    public func inverted() -> Fq2? {
+        guard let n = norm.inverted() else {
+            return nil
+        }
         return Fq2(a: a * n, b: (-b) * n)
     }
 

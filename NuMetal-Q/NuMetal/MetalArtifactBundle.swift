@@ -34,11 +34,9 @@ internal enum MetalArtifactBundle {
     static func artifactDigest() throws -> [UInt8] {
         var payload = Data("NuMeQ.MetalArtifact.v1".utf8)
         payload.append(try manifestData())
-        if let metallibURL = compiledMetallibURL() {
-            payload.append(try Data(contentsOf: metallibURL))
-        } else {
-            payload.append(Data(try combinedSource().utf8))
-        }
+        var abiVersion = MetalABI.currentVersion.littleEndian
+        payload.append(contentsOf: withUnsafeBytes(of: &abiVersion) { Data($0) })
+        payload.append(Data(try combinedSource().utf8))
         return Array(SHA256.hash(data: payload))
     }
 

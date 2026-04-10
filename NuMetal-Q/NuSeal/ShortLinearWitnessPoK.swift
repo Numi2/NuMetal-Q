@@ -320,7 +320,9 @@ internal enum ShortLinearWitnessPoK {
             absorb(round: round, transcript: &transcript)
 
             let challenge = foldingChallenge(transcript: &transcript)
-            let challengeInverse = challenge.inverse()
+            guard let challengeInverse = challenge.inverted() else {
+                throw ShortLinearWitnessPoKError.malformedStatement
+            }
             bindingTarget = AjtaiCommitment(
                 value: bindingTarget.value
                     + challenge * round.bindingRight.value
@@ -564,7 +566,9 @@ internal enum ShortLinearWitnessPoK {
         for round in proof.accumulatorRounds {
             absorb(round: round, transcript: &transcript)
             let challenge = foldingChallenge(transcript: &transcript)
-            let challengeInverse = challenge.inverse()
+            guard let challengeInverse = challenge.inverted() else {
+                return false
+            }
             bindingTarget = AjtaiCommitment(
                 value: bindingTarget.value
                     + challenge * round.bindingRight.value
@@ -718,11 +722,9 @@ internal enum ShortLinearWitnessPoK {
     }
 
     private static func responseChallenge(transcript: inout NuTranscriptField) -> Fq {
-        switch transcript.squeezeChallenge().v % 3 {
+        switch transcript.squeezeChallenge().v % 2 {
         case 0:
             return -Fq.one
-        case 1:
-            return .zero
         default:
             return .one
         }
@@ -1183,10 +1185,11 @@ internal enum ShortLinearWitnessPoK {
 
     private static func absorb(bytes: [UInt8], transcript: inout NuTranscriptField) {
         transcript.absorbLabel("bytes_\(bytes.count)")
-        for chunkStart in stride(from: 0, to: bytes.count, by: 8) {
-            var packed: UInt64 = 0
-            for index in chunkStart..<min(chunkStart + 8, bytes.count) {
-                packed |= UInt64(bytes[index]) << (UInt64(index - chunkStart) * 8)
+        for chunkStart in stride(from: 0, to: bytes.count, by: 7) {
+            let chunk = Array(bytes[chunkStart..<min(chunkStart + 7, bytes.count)])
+            var packed: UInt64 = UInt64(chunk.count)
+            for (index, byte) in chunk.enumerated() {
+                packed |= UInt64(byte) << (UInt64(index) * 8 + 8)
             }
             transcript.absorb(field: Fq(packed))
         }

@@ -518,10 +518,8 @@ final class ClusterWorkPacketTests: XCTestCase {
             tableCommitment: commitment.tableCommitment,
             directPackedOuterCommitments: commitment.directPackedOuterCommitments,
             tableDigest: tableDigest,
-            merkleRoot: commitment.merkleRoot,
             parameterDigest: commitment.parameterDigest,
             valueCount: commitment.valueCount,
-            codewordLength: commitment.codewordLength,
             packedChunkCount: commitment.packedChunkCount,
             statementDigest: commitment.statementDigest
         )

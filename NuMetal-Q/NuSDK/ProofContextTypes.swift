@@ -79,6 +79,7 @@ public enum ProofContextError: Error, Sendable {
     case witnessShapeMismatch
     case invalidWitnessElementCount(expected: Int, actual: Int)
     case invalidPublicInputCount(expected: Int, actual: Int)
+    case invalidPublicHeaderSize(expected: Int, actual: Int)
     case sealFailed
     case recursiveFoldingUnavailable
     case unsupportedStoredState

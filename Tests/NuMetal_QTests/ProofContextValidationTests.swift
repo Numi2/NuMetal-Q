@@ -34,7 +34,8 @@ final class ProofContextValidationTests: XCTestCase {
 
         let handle = try await context.seed(
             witness: witness,
-            publicInputs: [Fq(5), Fq(9)]
+            publicInputs: [Fq(5), Fq(9)],
+            publicHeader: AcceptanceSupport.packedPublicHeader([Fq(5), Fq(9)])
         )
 
         XCTAssertEqual(handle.shapeDigest, compiledShape.shape.digest)

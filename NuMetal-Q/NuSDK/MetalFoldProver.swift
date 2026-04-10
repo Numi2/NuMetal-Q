@@ -187,7 +187,8 @@ public actor MetalFoldProver {
         let rootNode = trace.nodes[Int(trace.rootIndex)]
         guard rootNode.publicInputs == pcd.header.publicInputs,
               rootNode.headerBytes == Data(pcd.header.toBytes()),
-              state.publicInputs == rootNode.publicInputs else {
+              state.publicInputs == rootNode.publicInputs,
+              state.publicHeader == rootNode.headerBytes else {
             throw MetalFoldProverError.unsupportedStoredState
         }
 
@@ -242,6 +243,7 @@ public actor MetalFoldProver {
             commitment: commitment,
             accumulatedWitness: aggregateWitness,
             publicInputs: root.publicInputs,
+            publicHeader: root.headerBytes,
             statementCount: UInt32(clamping: trace.nodes.count),
             normBudget: normBudget,
             errorTerms: [],
@@ -249,6 +251,7 @@ public actor MetalFoldProver {
             relaxationFactor: .one,
             maxWitnessClass: maxWitnessClass,
             stageAudit: [],
+            recursiveAccumulator: nil,
             typedTrace: trace
         )
     }

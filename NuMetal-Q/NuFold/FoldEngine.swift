@@ -88,6 +88,7 @@ public actor FoldEngine {
         shape: Shape,
         witness: Witness,
         publicInputs: [Fq],
+        publicHeader: Data,
         witnessClass: WitnessClass
     ) async throws -> FoldState {
         try witness.validateSemanticIntegrity()
@@ -113,6 +114,7 @@ public actor FoldEngine {
             commitment: AjtaiCommitment(value: commitmentAcc),
             packedWitness: rings,
             publicInputs: publicInputs,
+            publicHeader: publicHeader,
             witnessClass: witnessClass
         )
     }
@@ -124,6 +126,7 @@ public actor FoldEngine {
         commitment: AjtaiCommitment,
         packedWitness: [RingElement],
         publicInputs: [Fq],
+        publicHeader: Data,
         witnessClass: WitnessClass
     ) async throws -> FoldState {
         try requirePiDECRepresentableWitness(packedWitness)
@@ -235,6 +238,7 @@ public actor FoldEngine {
         let sourceClaim = CCSClaim(
             commitment: commitment,
             publicInputs: publicInputs,
+            publicHeader: publicHeader,
             witnessRingCount: UInt32(clamping: packedWitness.count),
             witnessFieldCount: UInt32(clamping: witnessFieldCount)
         )
@@ -263,6 +267,7 @@ public actor FoldEngine {
             commitment: accumulator.currentCommitment,
             accumulatedWitness: [],
             publicInputs: publicInputs,
+            publicHeader: publicHeader,
             statementCount: 1,
             normBudget: normBudget,
             errorTerms: reducedClaim.errorTerms,
@@ -299,7 +304,7 @@ public actor FoldEngine {
         }
 
         guard accumulator.currentClaim.publicInputs == proof.statement.publicInputs,
-              Data(accumulator.leafPublicInputs().flatMap { $0.toBytes() }) == proof.statement.publicHeader else {
+              accumulator.leafPublicHeader() == proof.statement.publicHeader else {
             throw FoldEngineError.invalidRecursiveAccumulator
         }
 
@@ -313,6 +318,7 @@ public actor FoldEngine {
             commitment: accumulator.currentCommitment,
             accumulatedWitness: [],
             publicInputs: accumulator.leafPublicInputs(),
+            publicHeader: accumulator.leafPublicHeader(),
             statementCount: accumulator.statementCount,
             normBudget: normBudget,
             errorTerms: accumulator.currentClaim.errorTerms,
@@ -500,7 +506,7 @@ public actor FoldEngine {
     ) -> Int {
         guard states.count > 1 else { return states.count }
 
-        return min(states.count, maxArity)
+        return min(states.count, min(maxArity, 2))
     }
 
     private func foldBatch(states: [FoldState], relation: CCSRelation) async throws -> FoldState {
@@ -682,6 +688,7 @@ public actor FoldEngine {
         return summary.statementCount == state.statementCount
             && summary.currentCommitment == state.commitment
             && summary.leafPublicInputs == state.publicInputs
+            && summary.leafPublicHeader == state.publicHeader
     }
 
     private func validateRecursiveInputState(_ state: FoldState) throws {
@@ -790,6 +797,7 @@ public actor FoldEngine {
         let currentClaim: CEClaim
         let currentWitness: [RingElement]
         let leafPublicInputs: [Fq]
+        let leafPublicHeader: Data
     }
 
     private func verifyAccumulator(
@@ -886,7 +894,8 @@ public actor FoldEngine {
                 currentCommitment: expectedClaim.commitment,
                 currentClaim: expectedClaim,
                 currentWitness: canonicalWitness,
-                leafPublicInputs: seed.sourceClaim.publicInputs
+                leafPublicInputs: seed.sourceClaim.publicInputs,
+                leafPublicHeader: seed.sourceClaim.publicHeader
             )
 
         case .fold:
@@ -981,7 +990,10 @@ public actor FoldEngine {
                 currentCommitment: expectedClaim.commitment,
                 currentClaim: expectedClaim,
                 currentWitness: verifiedWitness,
-                leafPublicInputs: childSummaries.flatMap(\.leafPublicInputs)
+                leafPublicInputs: childSummaries.flatMap(\.leafPublicInputs),
+                leafPublicHeader: childSummaries.reduce(into: Data()) { partial, summary in
+                    partial.append(summary.leafPublicHeader)
+                }
             )
 
         }
@@ -1223,7 +1235,13 @@ public actor FoldEngine {
         }
 
         let combinedPublicInputs = recursiveAccumulator.leafPublicInputs()
+        let combinedPublicHeader = recursiveAccumulator.leafPublicHeader()
         guard combinedPublicInputs == states.flatMap(\.publicInputs) else {
+            throw FoldEngineError.invalidAggregateState
+        }
+        guard combinedPublicHeader == states.reduce(into: Data(), { partial, state in
+            partial.append(state.publicHeader)
+        }) else {
             throw FoldEngineError.invalidAggregateState
         }
 
@@ -1239,6 +1257,7 @@ public actor FoldEngine {
             commitment: recursiveAccumulator.currentCommitment,
             accumulatedWitness: [],
             publicInputs: combinedPublicInputs,
+            publicHeader: combinedPublicHeader,
             statementCount: recursiveAccumulator.statementCount,
             normBudget: normBudget,
             errorTerms: recursiveAccumulator.currentClaim.errorTerms,
