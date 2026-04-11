@@ -49,6 +49,20 @@ final class EnvelopeSecurityTests: XCTestCase {
         }
     }
 
+    func testSealProofCodecRejectsPreviousPublicSealProofVersion() throws {
+        var serialized = try SealProofCodec.serialize(makeMinimalPublicSealProof(instanceCount: 1))
+        let previousVersion = PublicSealProof.currentVersion - 1
+        serialized[8] = UInt8(truncatingIfNeeded: previousVersion)
+        serialized[9] = UInt8(truncatingIfNeeded: previousVersion >> 8)
+
+        XCTAssertThrowsError(try SealProofCodec.deserialize(serialized)) { error in
+            guard let codecError = error as? BinaryReader.Error,
+                  case .invalidData = codecError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
     func testSealProofCodecRejectsOversizedPublicInputVectorCount() throws {
         XCTAssertThrowsError(try SealProofCodec.deserialize(makeOversizedPublicInputsSealProof())) { error in
             guard let codecError = error as? BinaryReader.Error,

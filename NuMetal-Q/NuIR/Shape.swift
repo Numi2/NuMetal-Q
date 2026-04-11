@@ -369,6 +369,33 @@ public struct CompiledShape: Sendable {
 }
 
 internal enum ShapeArtifact {
+    private static let cachedAjtaiPublicParameters: Data = {
+        let key = NuParams.derive(from: .canonical).commitmentKey
+        var writer = BinaryWriter()
+        writer.append(UInt32(clamping: key.keys.count))
+        writer.append(UInt32(clamping: RingElement.degree))
+        for ring in key.keys {
+            writer.append(ring.toBytes())
+        }
+        return writer.data
+    }()
+
+    private static let cachedRotationTableArtifact: Data = {
+        let table = NuParams.derive(from: .canonical).commitmentKey.rotationTable
+        var writer = BinaryWriter()
+        writer.append(UInt32(clamping: table.keyCount))
+        writer.append(UInt32(clamping: table.packedRows.count))
+        for row in table.packedRows {
+            writer.append(row.rowIndex)
+            writer.append(UInt32(clamping: row.entries.count))
+            for entry in row.entries {
+                writer.append(entry.col)
+                writer.append(entry.value.toBytes())
+            }
+        }
+        return writer.data
+    }()
+
     static func canonicalDigest(
         name: String,
         relation: CCSRelation,
@@ -450,7 +477,7 @@ internal enum ShapeArtifact {
                 writer.append(columnIndex)
             }
             for value in matrix.values {
-                writer.append(Data(value.toBytes()))
+                writer.append(value.toBytes())
             }
         }
         return writer.data
@@ -486,30 +513,11 @@ internal enum ShapeArtifact {
     }
 
     static func ajtaiPublicParameters() -> Data {
-        let key = NuParams.derive(from: .canonical).commitmentKey
-        var writer = BinaryWriter()
-        writer.append(UInt32(clamping: key.keys.count))
-        writer.append(UInt32(clamping: RingElement.degree))
-        for ring in key.keys {
-            writer.append(Data(ring.toBytes()))
-        }
-        return writer.data
+        cachedAjtaiPublicParameters
     }
 
     static func rotationTableArtifact() -> Data {
-        let table = NuParams.derive(from: .canonical).commitmentKey.rotationTable
-        var writer = BinaryWriter()
-        writer.append(UInt32(clamping: table.keyCount))
-        writer.append(UInt32(clamping: table.packedRows.count))
-        for row in table.packedRows {
-            writer.append(row.rowIndex)
-            writer.append(UInt32(clamping: row.entries.count))
-            for entry in row.entries {
-                writer.append(entry.col)
-                writer.append(Data(entry.value.toBytes()))
-            }
-        }
-        return writer.data
+        cachedRotationTableArtifact
     }
 
     static func transcriptConstants(for shape: Shape) -> Data {

@@ -389,6 +389,7 @@ internal enum ShortLinearWitnessPoK {
                 evaluationWeightDigest: statement.evaluationWeightDigest,
                 bindingCommitment: initialBindingCommitment,
                 restartNonce: restartNonce,
+                privateSeed: try NuSecureRandom.bytes(count: 32),
                 label: "short"
             )
             let outerSeedMaterial = makeMaskSeedMaterial(
@@ -397,6 +398,7 @@ internal enum ShortLinearWitnessPoK {
                 evaluationWeightDigest: statement.evaluationWeightDigest,
                 bindingCommitment: initialBindingCommitment,
                 restartNonce: restartNonce,
+                privateSeed: try NuSecureRandom.bytes(count: 32),
                 label: "outer"
             )
             let preparedOpening = try finalOpeningPreparation(
@@ -986,6 +988,7 @@ internal enum ShortLinearWitnessPoK {
         evaluationWeightDigest: [UInt8],
         bindingCommitment: AjtaiCommitment,
         restartNonce: UInt32,
+        privateSeed: [UInt8],
         label: String
     ) -> DirectPackedMaskSeedMaterial {
         var magnitudeRaw = [UInt64]()
@@ -999,6 +1002,7 @@ internal enum ShortLinearWitnessPoK {
                     evaluationWeightDigest: evaluationWeightDigest,
                     bindingCommitment: bindingCommitment,
                     restartNonce: restartNonce,
+                    privateSeed: privateSeed,
                     label: label,
                     vectorIndex: vectorIndex,
                     coefficientIndex: coefficientIndex
@@ -1036,6 +1040,7 @@ internal enum ShortLinearWitnessPoK {
         evaluationWeightDigest: [UInt8],
         bindingCommitment: AjtaiCommitment,
         restartNonce: UInt32,
+        privateSeed: [UInt8],
         label: String,
         vectorIndex: Int,
         coefficientIndex: Int
@@ -1045,6 +1050,7 @@ internal enum ShortLinearWitnessPoK {
         writer.appendLengthPrefixed(evaluationWeightDigest)
         writer.append(Data(bindingCommitment.value.toBytes()))
         writer.append(restartNonce)
+        writer.appendLengthPrefixed(privateSeed)
         writer.append(UInt32(clamping: vectorIndex))
         writer.append(UInt32(clamping: coefficientIndex))
         writer.appendLengthPrefixed(Data(label.utf8))

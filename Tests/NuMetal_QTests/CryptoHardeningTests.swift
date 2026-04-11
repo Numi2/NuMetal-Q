@@ -361,7 +361,6 @@ final class CryptoHardeningTests: XCTestCase {
         let metalFixture = try directPackedFixture(context: context)
 
         XCTAssertEqual(cpuFixture.commitment, metalFixture.commitment)
-        XCTAssertEqual(cpuFixture.proof, metalFixture.proof)
 
         var cpuDiagnostics = HachiVerificationDiagnostics()
         var cpuTranscript = NuTranscriptSeal(domain: "Tests.DirectPacked.Parity")
@@ -392,6 +391,83 @@ final class CryptoHardeningTests: XCTestCase {
             )
         )
         XCTAssertEqual(metalDiagnostics.summary, "ok")
+    }
+
+    func testDirectPackedOpeningUsesFreshPrivateMasks() throws {
+        let first = try directPackedFixture(context: nil)
+        let second = try directPackedFixture(context: nil)
+        let firstOpening = try XCTUnwrap(first.proof.classes.first?.openings.first?.directPacked)
+        let secondOpening = try XCTUnwrap(second.proof.classes.first?.openings.first?.directPacked)
+
+        XCTAssertEqual(first.commitment, second.commitment)
+        XCTAssertNotEqual(
+            firstOpening.relationProof.finalOpening,
+            secondOpening.relationProof.finalOpening
+        )
+
+        var firstDiagnostics = HachiVerificationDiagnostics()
+        var firstTranscript = NuTranscriptSeal(domain: "Tests.DirectPacked.Parity")
+        XCTAssertTrue(
+            try first.backend.verifyBatch(
+                commitments: [first.oracle: first.commitment],
+                queries: [first.query],
+                proof: first.proof,
+                transcript: &firstTranscript,
+                context: nil,
+                traceCollector: nil,
+                diagnostics: &firstDiagnostics
+            )
+        )
+
+        var secondDiagnostics = HachiVerificationDiagnostics()
+        var secondTranscript = NuTranscriptSeal(domain: "Tests.DirectPacked.Parity")
+        XCTAssertTrue(
+            try second.backend.verifyBatch(
+                commitments: [second.oracle: second.commitment],
+                queries: [second.query],
+                proof: second.proof,
+                transcript: &secondTranscript,
+                context: nil,
+                traceCollector: nil,
+                diagnostics: &secondDiagnostics
+            )
+        )
+    }
+
+    func testVerifyBatchRejectsDuplicateQueriesWithoutTrapping() throws {
+        let fixture = try directPackedFixture(context: nil)
+        var diagnostics = HachiVerificationDiagnostics()
+        var transcript = NuTranscriptSeal(domain: "Tests.DirectPacked.Parity")
+
+        XCTAssertFalse(
+            try fixture.backend.verifyBatch(
+                commitments: [fixture.oracle: fixture.commitment],
+                queries: [fixture.query, fixture.query],
+                proof: fixture.proof,
+                transcript: &transcript,
+                context: nil,
+                traceCollector: nil,
+                diagnostics: &diagnostics
+            )
+        )
+        XCTAssertNotEqual(diagnostics.summary, "ok")
+    }
+
+    func testCommitmentMapRejectsUnexpectedProofOracleWithoutTrapping() {
+        let witness = testCommitment(oracle: .witness())
+        let duplicateWitness = testCommitment(oracle: .witness())
+        var diagnostics = HachiVerificationDiagnostics()
+
+        XCTAssertNil(
+            HachiProofCommitmentMap.commitmentMap(
+                witness: witness,
+                matrixRows: [duplicateWitness],
+                expectedMatrixCount: 1,
+                label: "masked",
+                diagnostics: &diagnostics
+            )
+        )
+        XCTAssertNotEqual(diagnostics.summary, "ok")
     }
 
     func testDirectPackedOpeningRejectsTranscriptBindingTamper() throws {
@@ -453,6 +529,18 @@ final class CryptoHardeningTests: XCTestCase {
         var coeffs = [Fq](repeating: .zero, count: RingElement.degree)
         coeffs[index] = coefficient
         return RingElement(coeffs: coeffs)
+    }
+
+    private func testCommitment(oracle: SpartanOracleID) -> HachiPCSCommitment {
+        HachiPCSCommitment(
+            oracle: oracle,
+            tableCommitment: AjtaiCommitment(value: .zero),
+            tableDigest: [0x01],
+            parameterDigest: NuParams.derive(from: .canonical).seal.parameterDigest,
+            valueCount: 1,
+            packedChunkCount: 1,
+            statementDigest: [0x02]
+        )
     }
 
     private func directPackedFixture(

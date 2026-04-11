@@ -1,0 +1,27 @@
+{
+  "benchmarkArtifactPath" : "/Users/home/NuMetal-Q/artifacts/apple-silicon-validation/bench-parity/benchmark-report.json",
+  "dimensions" : [
+    "prover_time_p50_ms",
+    "prover_time_p95_ms",
+    "cpu_verify_p50_ms",
+    "cpu_verify_p95_ms",
+    "assisted_verify_p50_ms",
+    "assisted_verify_gpu_p50_ms",
+    "proof_bytes",
+    "peak_rss_bytes",
+    "gpu_time_ms",
+    "threadgroup_widths",
+    "counter_sampling",
+    "nnz",
+    "max_gate_degree"
+  ],
+  "entries" : [
+
+  ],
+  "generatedAt" : "2026-04-10T23:52:17Z",
+  "requiredBaselines" : [
+    "Spartan-family",
+    "Lattice folding",
+    "Multilinear PCS"
+  ]
+}

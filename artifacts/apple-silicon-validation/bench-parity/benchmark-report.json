@@ -1,0 +1,608 @@
+{
+  "completedAt" : "2026-04-10T23:54:52Z",
+  "configuration" : {
+    "iterations" : 1,
+    "warmups" : 0
+  },
+  "lastUpdatedAt" : "2026-04-10T23:54:52Z",
+  "metadata" : {
+    "activeProcessorCount" : 10,
+    "generatedAt" : "2026-04-10T23:52:17Z",
+    "hostName" : "T’s MacBook Air",
+    "operatingSystemVersion" : "Version 26.3 (Build 25D5087f)",
+    "physicalMemoryBytes" : 25769803776
+  },
+  "sealWorkloads" : [
+    {
+      "assistedVerify" : {
+        "maxMilliseconds" : 4797.764375,
+        "meanMilliseconds" : 4797.764375,
+        "medianMilliseconds" : 4797.764375,
+        "minMilliseconds" : 4797.764375,
+        "p90Milliseconds" : 4797.764375,
+        "p95Milliseconds" : 4797.764375,
+        "p99Milliseconds" : 4797.764375,
+        "samples" : 1
+      },
+      "completedIterations" : 1,
+      "completedSamples" : 1,
+      "cpuVerify" : {
+        "maxMilliseconds" : 4854.894875,
+        "meanMilliseconds" : 4854.894875,
+        "medianMilliseconds" : 4854.894875,
+        "minMilliseconds" : 4854.894875,
+        "p90Milliseconds" : 4854.894875,
+        "p95Milliseconds" : 4854.894875,
+        "p99Milliseconds" : 4854.894875,
+        "samples" : 1
+      },
+      "dispatchTracePath" : "/Users/home/NuMetal-Q/artifacts/apple-silicon-validation/bench-parity/benchmark-dispatch-trace.json",
+      "expectedIterations" : 1,
+      "expectedSamples" : 1,
+      "fuseFailure" : "witnessExceedsPiDECRepresentability(maxMagnitude: 194167, base: 2, limbs: 13)",
+      "generatorHeadroom" : 3845,
+      "gpuFamilyTag" : "apple9",
+      "gpuName" : "Apple M4",
+      "normCeiling" : 8192,
+      "peakRSSBytes" : 911360000,
+      "preflightMaxMagnitude" : 4143,
+      "publicProofBytes" : 246252,
+      "representabilityNote" : "guard=256 source<=1 derived<=4347",
+      "representabilityStatus" : "verified",
+      "resumeArtifactBytes" : 10513,
+      "seal" : {
+        "maxMilliseconds" : 87274.240042,
+        "meanMilliseconds" : 87274.240042,
+        "medianMilliseconds" : 87274.240042,
+        "minMilliseconds" : 87274.240042,
+        "p90Milliseconds" : 87274.240042,
+        "p95Milliseconds" : 87274.240042,
+        "p99Milliseconds" : 87274.240042,
+        "samples" : 1
+      },
+      "seedOne" : {
+        "maxMilliseconds" : 153.449917,
+        "meanMilliseconds" : 153.449917,
+        "medianMilliseconds" : 153.449917,
+        "minMilliseconds" : 153.449917,
+        "p90Milliseconds" : 153.449917,
+        "p95Milliseconds" : 153.449917,
+        "p99Milliseconds" : 153.449917,
+        "samples" : 1
+      },
+      "seedTwo" : {
+        "maxMilliseconds" : 156.489792,
+        "meanMilliseconds" : 156.489792,
+        "medianMilliseconds" : 156.489792,
+        "minMilliseconds" : 156.489792,
+        "p90Milliseconds" : 156.489792,
+        "p95Milliseconds" : 156.489792,
+        "p99Milliseconds" : 156.489792,
+        "samples" : 1
+      },
+      "status" : "completed",
+      "totalExportBytes" : 257084,
+      "verificationParity" : "matched",
+      "verifyMode" : "cpu-only+metal-assisted",
+      "workload" : {
+        "densityModel" : "sparse",
+        "family" : "pcd-auth",
+        "leftTermsPerRow" : 4,
+        "matrixCount" : 3,
+        "maxGateDegree" : 1,
+        "name" : "auth-policy-sparse",
+        "nonZeroDensity" : 0.011627906976744186,
+        "publicInputCount" : 2,
+        "relationModel" : "sparse local aggregate checks",
+        "rightTermsPerRow" : 4,
+        "rowCount" : 64,
+        "scenario" : "multi-factor authorization policy",
+        "sourceLanes" : [
+          {
+            "name" : "balances",
+            "width" : 16
+          },
+          {
+            "name" : "riskFlags",
+            "width" : 1
+          },
+          {
+            "name" : "approvals",
+            "width" : 8
+          }
+        ],
+        "totalNNZ" : 576,
+        "witnessBitWidth" : 16,
+        "witnessLength" : 256
+      }
+    }
+  ],
+  "status" : "completed",
+  "verifierObservability" : {
+    "counterCaptureState" : "unsupported",
+    "counterCapturedDispatches" : 0,
+    "counterCapturedPercentage" : 0,
+    "counterFallbackReasons" : [
+      "dispatch-boundary counters unsupported on this host; used command-buffer timeline"
+    ],
+    "counterSamplingAvailable" : false,
+    "gpuFamilyTag" : "apple9",
+    "gpuName" : "Apple M4",
+    "timingSourceBreakdown" : [
+      {
+        "dispatchCount" : 8,
+        "timingSource" : "command-buffer-timeline"
+      }
+    ],
+    "totalDispatches" : 8
+  },
+  "verifierWorkloads" : [
+    {
+      "assistanceMode" : "metal-assisted",
+      "assistedVerify" : {
+        "maxMilliseconds" : 14.828583,
+        "meanMilliseconds" : 14.828583,
+        "medianMilliseconds" : 14.828583,
+        "minMilliseconds" : 14.828583,
+        "p90Milliseconds" : 14.828583,
+        "p95Milliseconds" : 14.828583,
+        "p99Milliseconds" : 14.828583,
+        "samples" : 1
+      },
+      "assistedVerifyGPU" : {
+        "maxMilliseconds" : 0.011375173926353455,
+        "meanMilliseconds" : 0.011375173926353455,
+        "medianMilliseconds" : 0.011375173926353455,
+        "minMilliseconds" : 0.011375173926353455,
+        "p90Milliseconds" : 0.011375173926353455,
+        "p95Milliseconds" : 0.011375173926353455,
+        "p99Milliseconds" : 0.011375173926353455,
+        "samples" : 1
+      },
+      "completedIterations" : 1,
+      "completedSamples" : 1,
+      "counterCaptureState" : "unsupported",
+      "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+      "counterSamplingAvailable" : false,
+      "cpuVerify" : {
+        "maxMilliseconds" : 0.292792,
+        "meanMilliseconds" : 0.292792,
+        "medianMilliseconds" : 0.292792,
+        "minMilliseconds" : 0.292792,
+        "p90Milliseconds" : 0.292792,
+        "p95Milliseconds" : 0.292792,
+        "p99Milliseconds" : 0.292792,
+        "samples" : 1
+      },
+      "dispatchCount" : 1,
+      "dispatchSummaries" : [
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSamplesCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpu" : {
+            "maxMilliseconds" : 13.955625,
+            "meanMilliseconds" : 13.955625,
+            "medianMilliseconds" : 13.955625,
+            "minMilliseconds" : 13.955625,
+            "p90Milliseconds" : 13.955625,
+            "p95Milliseconds" : 13.955625,
+            "p99Milliseconds" : 13.955625,
+            "samples" : 1
+          },
+          "dispatchLabel" : "piCCS.matrix_lift[0]",
+          "gpu" : {
+            "maxMilliseconds" : 0.011375173926353455,
+            "meanMilliseconds" : 0.011375173926353455,
+            "medianMilliseconds" : 0.011375173926353455,
+            "minMilliseconds" : 0.011375173926353455,
+            "p90Milliseconds" : 0.011375173926353455,
+            "p95Milliseconds" : 0.011375173926353455,
+            "p99Milliseconds" : 0.011375173926353455,
+            "samples" : 1
+          },
+          "gpuTimingSource" : "command-buffer-timeline",
+          "kernelFamily" : "nu_matrix_lift",
+          "sampleCount" : 1,
+          "stage" : "piCCS",
+          "threadExecutionWidths" : [
+            32
+          ],
+          "threadgroupWidths" : [
+            64
+          ]
+        }
+      ],
+      "dispatchTracePath" : "/Users/home/NuMetal-Q/artifacts/apple-silicon-validation/bench-parity/benchmark-dispatch-trace.json",
+      "expectedIterations" : 1,
+      "expectedSamples" : 1,
+      "gpuFamilyTag" : "apple9",
+      "gpuName" : "Apple M4",
+      "gpuTimingSource" : "command-buffer-timeline",
+      "note" : "Metal-assisted verifier uses the recursive-stage GPU recomputation path.",
+      "peakRSSBytes" : 911360000,
+      "status" : "completed",
+      "workload" : {
+        "arity" : 1,
+        "fieldCount" : 4,
+        "name" : "piccs-verify",
+        "stage" : "piCCS",
+        "witnessRingCount" : 1
+      }
+    },
+    {
+      "assistanceMode" : "metal-assisted",
+      "assistedVerify" : {
+        "maxMilliseconds" : 4132.6815,
+        "meanMilliseconds" : 4132.6815,
+        "medianMilliseconds" : 4132.6815,
+        "minMilliseconds" : 4132.6815,
+        "p90Milliseconds" : 4132.6815,
+        "p95Milliseconds" : 4132.6815,
+        "p99Milliseconds" : 4132.6815,
+        "samples" : 1
+      },
+      "assistedVerifyGPU" : {
+        "maxMilliseconds" : 33.942125272005796,
+        "meanMilliseconds" : 33.942125272005796,
+        "medianMilliseconds" : 33.942125272005796,
+        "minMilliseconds" : 33.942125272005796,
+        "p90Milliseconds" : 33.942125272005796,
+        "p95Milliseconds" : 33.942125272005796,
+        "p99Milliseconds" : 33.942125272005796,
+        "samples" : 1
+      },
+      "completedIterations" : 1,
+      "completedSamples" : 1,
+      "counterCaptureState" : "unsupported",
+      "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+      "counterSamplingAvailable" : false,
+      "cpuVerify" : {
+        "maxMilliseconds" : 106.430583,
+        "meanMilliseconds" : 106.430583,
+        "medianMilliseconds" : 106.430583,
+        "minMilliseconds" : 106.430583,
+        "p90Milliseconds" : 106.430583,
+        "p95Milliseconds" : 106.430583,
+        "p99Milliseconds" : 106.430583,
+        "samples" : 1
+      },
+      "dispatchCount" : 4,
+      "dispatchSummaries" : [
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSamplesCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpu" : {
+            "maxMilliseconds" : 42.023125,
+            "meanMilliseconds" : 42.023125,
+            "medianMilliseconds" : 42.023125,
+            "minMilliseconds" : 42.023125,
+            "p90Milliseconds" : 42.023125,
+            "p95Milliseconds" : 42.023125,
+            "p99Milliseconds" : 42.023125,
+            "samples" : 1
+          },
+          "dispatchLabel" : "piRLC.cross_term_commit_batch",
+          "gpu" : {
+            "maxMilliseconds" : 33.78220833837986,
+            "meanMilliseconds" : 33.78220833837986,
+            "medianMilliseconds" : 33.78220833837986,
+            "minMilliseconds" : 33.78220833837986,
+            "p90Milliseconds" : 33.78220833837986,
+            "p95Milliseconds" : 33.78220833837986,
+            "p99Milliseconds" : 33.78220833837986,
+            "samples" : 1
+          },
+          "gpuTimingSource" : "command-buffer-timeline",
+          "kernelFamily" : "nu_sparse_rot_commit_batch",
+          "sampleCount" : 1,
+          "stage" : "piRLC",
+          "threadExecutionWidths" : [
+            32
+          ],
+          "threadgroupWidths" : [
+            64
+          ]
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSamplesCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpu" : {
+            "maxMilliseconds" : 0.319416,
+            "meanMilliseconds" : 0.319416,
+            "medianMilliseconds" : 0.319416,
+            "minMilliseconds" : 0.319416,
+            "p90Milliseconds" : 0.319416,
+            "p95Milliseconds" : 0.319416,
+            "p99Milliseconds" : 0.319416,
+            "samples" : 1
+          },
+          "dispatchLabel" : "piRLC.cross_terms",
+          "gpu" : {
+            "maxMilliseconds" : 0.06600003689527512,
+            "meanMilliseconds" : 0.06600003689527512,
+            "medianMilliseconds" : 0.06600003689527512,
+            "minMilliseconds" : 0.06600003689527512,
+            "p90Milliseconds" : 0.06600003689527512,
+            "p95Milliseconds" : 0.06600003689527512,
+            "p99Milliseconds" : 0.06600003689527512,
+            "samples" : 1
+          },
+          "gpuTimingSource" : "command-buffer-timeline",
+          "kernelFamily" : "nu_ring_mul_ag64_d64",
+          "sampleCount" : 1,
+          "stage" : "piRLC",
+          "threadExecutionWidths" : [
+            32
+          ],
+          "threadgroupWidths" : [
+            64
+          ]
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSamplesCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpu" : {
+            "maxMilliseconds" : 0.623083,
+            "meanMilliseconds" : 0.623083,
+            "medianMilliseconds" : 0.623083,
+            "minMilliseconds" : 0.623083,
+            "p90Milliseconds" : 0.623083,
+            "p95Milliseconds" : 0.623083,
+            "p99Milliseconds" : 0.623083,
+            "samples" : 1
+          },
+          "dispatchLabel" : "piRLC.fold_commitment",
+          "gpu" : {
+            "maxMilliseconds" : 0.04641665145754814,
+            "meanMilliseconds" : 0.04641665145754814,
+            "medianMilliseconds" : 0.04641665145754814,
+            "minMilliseconds" : 0.04641665145754814,
+            "p90Milliseconds" : 0.04641665145754814,
+            "p95Milliseconds" : 0.04641665145754814,
+            "p99Milliseconds" : 0.04641665145754814,
+            "samples" : 1
+          },
+          "gpuTimingSource" : "command-buffer-timeline",
+          "kernelFamily" : "nu_ring_bind_fold_batch",
+          "sampleCount" : 1,
+          "stage" : "piRLC",
+          "threadExecutionWidths" : [
+            32
+          ],
+          "threadgroupWidths" : [
+            64
+          ]
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSamplesCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpu" : {
+            "maxMilliseconds" : 0.599709,
+            "meanMilliseconds" : 0.599709,
+            "medianMilliseconds" : 0.599709,
+            "minMilliseconds" : 0.599709,
+            "p90Milliseconds" : 0.599709,
+            "p95Milliseconds" : 0.599709,
+            "p99Milliseconds" : 0.599709,
+            "samples" : 1
+          },
+          "dispatchLabel" : "piRLC.fold_witness",
+          "gpu" : {
+            "maxMilliseconds" : 0.04750024527311325,
+            "meanMilliseconds" : 0.04750024527311325,
+            "medianMilliseconds" : 0.04750024527311325,
+            "minMilliseconds" : 0.04750024527311325,
+            "p90Milliseconds" : 0.04750024527311325,
+            "p95Milliseconds" : 0.04750024527311325,
+            "p99Milliseconds" : 0.04750024527311325,
+            "samples" : 1
+          },
+          "gpuTimingSource" : "command-buffer-timeline",
+          "kernelFamily" : "nu_ring_bind_fold_batch",
+          "sampleCount" : 1,
+          "stage" : "piRLC",
+          "threadExecutionWidths" : [
+            32
+          ],
+          "threadgroupWidths" : [
+            64
+          ]
+        }
+      ],
+      "dispatchTracePath" : "/Users/home/NuMetal-Q/artifacts/apple-silicon-validation/bench-parity/benchmark-dispatch-trace.json",
+      "expectedIterations" : 1,
+      "expectedSamples" : 1,
+      "gpuFamilyTag" : "apple9",
+      "gpuName" : "Apple M4",
+      "gpuTimingSource" : "command-buffer-timeline",
+      "note" : "Metal-assisted verifier uses the recursive-stage GPU recomputation path.",
+      "peakRSSBytes" : 911360000,
+      "status" : "completed",
+      "workload" : {
+        "arity" : 3,
+        "fieldCount" : 2,
+        "name" : "pirlc-verify",
+        "stage" : "piRLC",
+        "witnessRingCount" : 4
+      }
+    },
+    {
+      "assistanceMode" : "metal-assisted",
+      "assistedVerify" : {
+        "maxMilliseconds" : 5581.161417,
+        "meanMilliseconds" : 5581.161417,
+        "medianMilliseconds" : 5581.161417,
+        "minMilliseconds" : 5581.161417,
+        "p90Milliseconds" : 5581.161417,
+        "p95Milliseconds" : 5581.161417,
+        "p99Milliseconds" : 5581.161417,
+        "samples" : 1
+      },
+      "assistedVerifyGPU" : {
+        "maxMilliseconds" : 49.00087462738156,
+        "meanMilliseconds" : 49.00087462738156,
+        "medianMilliseconds" : 49.00087462738156,
+        "minMilliseconds" : 49.00087462738156,
+        "p90Milliseconds" : 49.00087462738156,
+        "p95Milliseconds" : 49.00087462738156,
+        "p99Milliseconds" : 49.00087462738156,
+        "samples" : 1
+      },
+      "completedIterations" : 1,
+      "completedSamples" : 1,
+      "counterCaptureState" : "unsupported",
+      "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+      "counterSamplingAvailable" : false,
+      "cpuVerify" : {
+        "maxMilliseconds" : 129.835834,
+        "meanMilliseconds" : 129.835834,
+        "medianMilliseconds" : 129.835834,
+        "minMilliseconds" : 129.835834,
+        "p90Milliseconds" : 129.835834,
+        "p95Milliseconds" : 129.835834,
+        "p99Milliseconds" : 129.835834,
+        "samples" : 1
+      },
+      "dispatchCount" : 3,
+      "dispatchSummaries" : [
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSamplesCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpu" : {
+            "maxMilliseconds" : 0.584625,
+            "meanMilliseconds" : 0.584625,
+            "medianMilliseconds" : 0.584625,
+            "minMilliseconds" : 0.584625,
+            "p90Milliseconds" : 0.584625,
+            "p95Milliseconds" : 0.584625,
+            "p99Milliseconds" : 0.584625,
+            "samples" : 1
+          },
+          "dispatchLabel" : "piDEC.decompose",
+          "gpu" : {
+            "maxMilliseconds" : 0.012458302080631256,
+            "meanMilliseconds" : 0.012458302080631256,
+            "medianMilliseconds" : 0.012458302080631256,
+            "minMilliseconds" : 0.012458302080631256,
+            "p90Milliseconds" : 0.012458302080631256,
+            "p95Milliseconds" : 0.012458302080631256,
+            "p99Milliseconds" : 0.012458302080631256,
+            "samples" : 1
+          },
+          "gpuTimingSource" : "command-buffer-timeline",
+          "kernelFamily" : "nu_pidec_decompose",
+          "sampleCount" : 1,
+          "stage" : "piDEC",
+          "threadExecutionWidths" : [
+            32
+          ],
+          "threadgroupWidths" : [
+            256
+          ]
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSamplesCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpu" : {
+            "maxMilliseconds" : 59.793333,
+            "meanMilliseconds" : 59.793333,
+            "medianMilliseconds" : 59.793333,
+            "minMilliseconds" : 59.793333,
+            "p90Milliseconds" : 59.793333,
+            "p95Milliseconds" : 59.793333,
+            "p99Milliseconds" : 59.793333,
+            "samples" : 1
+          },
+          "dispatchLabel" : "piDEC.limb_commit_batch",
+          "gpu" : {
+            "maxMilliseconds" : 47.974041663110256,
+            "meanMilliseconds" : 47.974041663110256,
+            "medianMilliseconds" : 47.974041663110256,
+            "minMilliseconds" : 47.974041663110256,
+            "p90Milliseconds" : 47.974041663110256,
+            "p95Milliseconds" : 47.974041663110256,
+            "p99Milliseconds" : 47.974041663110256,
+            "samples" : 1
+          },
+          "gpuTimingSource" : "command-buffer-timeline",
+          "kernelFamily" : "nu_sparse_rot_commit_batch",
+          "sampleCount" : 1,
+          "stage" : "piDEC",
+          "threadExecutionWidths" : [
+            32
+          ],
+          "threadgroupWidths" : [
+            64
+          ]
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSamplesCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpu" : {
+            "maxMilliseconds" : 1.659292,
+            "meanMilliseconds" : 1.659292,
+            "medianMilliseconds" : 1.659292,
+            "minMilliseconds" : 1.659292,
+            "p90Milliseconds" : 1.659292,
+            "p95Milliseconds" : 1.659292,
+            "p99Milliseconds" : 1.659292,
+            "samples" : 1
+          },
+          "dispatchLabel" : "piDEC.reconstruct_commitment",
+          "gpu" : {
+            "maxMilliseconds" : 1.0143746621906757,
+            "meanMilliseconds" : 1.0143746621906757,
+            "medianMilliseconds" : 1.0143746621906757,
+            "minMilliseconds" : 1.0143746621906757,
+            "p90Milliseconds" : 1.0143746621906757,
+            "p95Milliseconds" : 1.0143746621906757,
+            "p99Milliseconds" : 1.0143746621906757,
+            "samples" : 1
+          },
+          "gpuTimingSource" : "command-buffer-timeline",
+          "kernelFamily" : "nu_ring_bind_fold_batch",
+          "sampleCount" : 1,
+          "stage" : "piDEC",
+          "threadExecutionWidths" : [
+            32
+          ],
+          "threadgroupWidths" : [
+            64
+          ]
+        }
+      ],
+      "dispatchTracePath" : "/Users/home/NuMetal-Q/artifacts/apple-silicon-validation/bench-parity/benchmark-dispatch-trace.json",
+      "expectedIterations" : 1,
+      "expectedSamples" : 1,
+      "gpuFamilyTag" : "apple9",
+      "gpuName" : "Apple M4",
+      "gpuTimingSource" : "command-buffer-timeline",
+      "note" : "Metal-assisted verifier uses the recursive-stage GPU recomputation path.",
+      "peakRSSBytes" : 911360000,
+      "status" : "completed",
+      "workload" : {
+        "arity" : 1,
+        "fieldCount" : 64,
+        "name" : "pidec-verify",
+        "stage" : "piDEC",
+        "witnessRingCount" : 3
+      }
+    }
+  ]
+}

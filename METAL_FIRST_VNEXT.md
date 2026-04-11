@@ -84,7 +84,7 @@
   - rejection-metric partial reduction and finalize
 - The Apple9+ direct-packed fast path is feature-gated; older supported families fall back to the CPU oracle for final-opening execution.
 - `SealProof.currentVersion` is now `9`.
-- `PublicSealProof.currentVersion` is now `5`.
+- `PublicSealProof.currentVersion` is now `6`.
 - Verifier-stage benchmarking now reports CPU vs Metal-assisted timings for:
   - PiCCS verify
   - PiRLC verify

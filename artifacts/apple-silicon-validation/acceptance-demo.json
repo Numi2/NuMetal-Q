@@ -1,0 +1,82 @@
+{
+  "cluster" : {
+    "clusterSealVerificationResult" : true,
+    "confinedHandleEligibility" : "blocked(deviceConfined)",
+    "confinedLaneIndices" : [
+      1
+    ],
+    "delegatableHandleEligibility" : "allowed",
+    "delegatedCommitmentDiffersFromFinal" : true,
+    "sessionReturnedToPaired" : true
+  },
+  "generatedAt" : "2026-04-10T23:46:27Z",
+  "metal" : {
+    "deviceName" : "Apple M4",
+    "gpuFamilyTag" : "apple9",
+    "maxThreadsPerThreadgroup" : 1024,
+    "warmedThreadExecutionWidth" : 32
+  },
+  "profile" : {
+    "challengeSetDescription" : "-1, 0, 1, 2",
+    "derivedParamsVerified" : true,
+    "irreducibilityVerified" : true,
+    "name" : "AG64-SNQ-OneStack-A",
+    "parameterPinPrefix" : "ac19863321b77de7",
+    "schedulerAggressiveSeal" : true,
+    "schedulerMaxArity" : 8,
+    "schedulerQueueDepth" : 2,
+    "securityBits" : 174
+  },
+  "sdkFlow" : {
+    "envelopeSignatureValid" : true,
+    "logicalStatementCount" : 2,
+    "matrixCommitments" : 1,
+    "outerSpartanRounds" : 0,
+    "pcsBatchClasses" : 2,
+    "pcsOpenings" : 2,
+    "resumedChainID" : "019FD217-A3CA-46AD-9642-F9D310D803FB",
+    "sealBackendID" : "SPARTAN-HACHI-AG64-K4-DNU",
+    "seedHandles" : 2,
+    "verificationResult" : true
+  },
+  "shapeCompiler" : {
+    "commitmentBits" : 1024,
+    "kernelConfigurations" : [
+      {
+        "foldArity" : 4,
+        "gpuFamilyTag" : "acceptance-demo",
+        "threadgroupSize" : 64,
+        "tilesPerThreadgroup" : 2
+      }
+    ],
+    "laneCount" : 1,
+    "shapeDigestPrefix" : "c8a23ec1cae7d8ee",
+    "shapeName" : "AcceptanceDemo",
+    "shapePackSignatureBytes" : 32
+  },
+  "summary" : "acceptance demo succeeded across profile, compiler, metal, SuperNeo stages, SDK flow, cluster, and sync",
+  "superNeo" : {
+    "crossTermCommitments" : 1,
+    "decompositionLimbs" : 13,
+    "piCCSMetalMatchesCPU" : true,
+    "piCCSSumcheckRounds" : 2,
+    "piCCSVerified" : true,
+    "piDECInput" : "canonical bounded witness packet",
+    "piDECMetalMatchesCPU" : true,
+    "piDECVerified" : true,
+    "piRLCMetalMatchesCPU" : true,
+    "piRLCVerified" : true,
+    "ringChallengeCoefficientZero" : [
+      2,
+      0
+    ],
+    "stagesExercised" : "PiCCS x2, PiRLC, PiDEC"
+  },
+  "sync" : {
+    "attestationCarriedThroughSync" : true,
+    "ciphertextBytes" : 119189,
+    "messageID" : "B5B573EF-2BAE-4714-807F-246E01B09319",
+    "openedEnvelopeMatchesOriginal" : true,
+    "signatureBytes" : 32
+  }
+}

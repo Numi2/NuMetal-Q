@@ -144,6 +144,26 @@ internal struct HachiPCSBackend {
             label: "numeq.decider.hachi.batch.seed",
             count: 32
         )
+        return try verifyBatch(
+            commitments: commitments,
+            queries: queries,
+            proof: proof,
+            batchSeedDigest: batchSeedDigest,
+            context: context,
+            traceCollector: traceCollector,
+            diagnostics: &diagnostics
+        )
+    }
+
+    func verifyBatch(
+        commitments: [SpartanOracleID: HachiPCSCommitment],
+        queries: [SpartanPCSQuery<Fq>],
+        proof: HachiPCSBatchOpeningProof,
+        batchSeedDigest: [UInt8],
+        context: MetalContext? = nil,
+        traceCollector: MetalTraceCollector? = nil,
+        diagnostics: inout HachiVerificationDiagnostics
+    ) throws -> Bool {
         guard proof.batchSeedDigest == batchSeedDigest else {
             diagnostics.recordFailure("invalid hachi pcs batch seed")
             return false
@@ -158,14 +178,18 @@ internal struct HachiPCSBackend {
         var seenClassKeys = Set<String>()
         _ = context
         _ = traceCollector
-        let expectedQueries = Dictionary(
-            uniqueKeysWithValues: queries.map { query in
-                (
-                    "\(pointKey(query.point))::\(pointKey(query.oracle))",
-                    query
+        var expectedQueries = [String: SpartanPCSQuery<Fq>]()
+        expectedQueries.reserveCapacity(queries.count)
+        for query in queries {
+            let queryKey = "\(pointKey(query.point))::\(pointKey(query.oracle))"
+            guard expectedQueries[queryKey] == nil else {
+                diagnostics.recordFailure(
+                    "duplicate hachi pcs query \(pointKey(query.oracle)) at \(pointKey(query.point))"
                 )
+                return false
             }
-        )
+            expectedQueries[queryKey] = query
+        }
         let openingCount = proof.classes.reduce(0) { partial, classProof in
             partial + classProof.openings.count
         }

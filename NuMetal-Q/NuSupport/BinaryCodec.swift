@@ -46,6 +46,10 @@ internal struct BinaryWriter {
         data.append(value)
     }
 
+    mutating func append(_ value: [UInt8]) {
+        data.append(contentsOf: value)
+    }
+
     mutating func appendLengthPrefixed(_ value: [UInt8]) {
         append(UInt32(value.count))
         data.append(contentsOf: value)

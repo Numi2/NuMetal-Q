@@ -466,29 +466,71 @@ public enum HachiClusterSealOperation: String, Sendable, Codable, Equatable {
 public struct HachiClusterSealCommitments: Sendable, Codable, Equatable {
     public let witnessCommitment: HachiPCSCommitment
     public let matrixEvaluationCommitments: [HachiPCSCommitment]
-    public let blindingCommitments: SpartanBlindingCommitments<HachiPCSCommitment>
 
     public init(
         witnessCommitment: HachiPCSCommitment,
-        matrixEvaluationCommitments: [HachiPCSCommitment],
-        blindingCommitments: SpartanBlindingCommitments<HachiPCSCommitment>
+        matrixEvaluationCommitments: [HachiPCSCommitment]
     ) {
         self.witnessCommitment = witnessCommitment
         self.matrixEvaluationCommitments = matrixEvaluationCommitments
-        self.blindingCommitments = blindingCommitments
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case witnessCommitment
+        case matrixEvaluationCommitments
+        case blindingCommitments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard container.contains(.blindingCommitments) == false else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .blindingCommitments,
+                in: container,
+                debugDescription: "legacy cluster seal commitment payload includes blinding commitments"
+            )
+        }
+        self.witnessCommitment = try container.decode(HachiPCSCommitment.self, forKey: .witnessCommitment)
+        self.matrixEvaluationCommitments = try container.decode(
+            [HachiPCSCommitment].self,
+            forKey: .matrixEvaluationCommitments
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(witnessCommitment, forKey: .witnessCommitment)
+        try container.encode(matrixEvaluationCommitments, forKey: .matrixEvaluationCommitments)
     }
 }
 
 public struct HachiClusterSealOpenings: Sendable, Codable, Equatable {
     public let pcsOpeningProof: HachiPCSBatchOpeningProof
-    public let blindingOpeningProof: HachiPCSBatchOpeningProof
 
-    public init(
-        pcsOpeningProof: HachiPCSBatchOpeningProof,
-        blindingOpeningProof: HachiPCSBatchOpeningProof
-    ) {
+    public init(pcsOpeningProof: HachiPCSBatchOpeningProof) {
         self.pcsOpeningProof = pcsOpeningProof
-        self.blindingOpeningProof = blindingOpeningProof
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pcsOpeningProof
+        case blindingOpeningProof
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard container.contains(.blindingOpeningProof) == false else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .blindingOpeningProof,
+                in: container,
+                debugDescription: "legacy cluster seal opening payload includes blinding openings"
+            )
+        }
+        self.pcsOpeningProof = try container.decode(HachiPCSBatchOpeningProof.self, forKey: .pcsOpeningProof)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(pcsOpeningProof, forKey: .pcsOpeningProof)
     }
 }
 
@@ -496,33 +538,64 @@ public struct HachiClusterSealWorkPacket: Sendable, Codable, Equatable {
     public let operation: HachiClusterSealOperation
     public let maskedWitnessPolynomial: MultilinearPoly
     public let maskedRowPolynomials: [MultilinearPoly]
-    public let blindingWitnessPolynomial: MultilinearPoly
-    public let blindingRowPolynomials: [MultilinearPoly]
     public let maskedQueries: [SpartanPCSQuery<Fq>]
-    public let blindingQueries: [SpartanPCSQuery<Fq>]
     public let pcsBatchSeedDigest: [UInt8]
-    public let blindingBatchSeedDigest: [UInt8]
 
     public init(
         operation: HachiClusterSealOperation,
         maskedWitnessPolynomial: MultilinearPoly,
         maskedRowPolynomials: [MultilinearPoly],
-        blindingWitnessPolynomial: MultilinearPoly,
-        blindingRowPolynomials: [MultilinearPoly],
         maskedQueries: [SpartanPCSQuery<Fq>] = [],
-        blindingQueries: [SpartanPCSQuery<Fq>] = [],
-        pcsBatchSeedDigest: [UInt8] = [],
-        blindingBatchSeedDigest: [UInt8] = []
+        pcsBatchSeedDigest: [UInt8] = []
     ) {
         self.operation = operation
         self.maskedWitnessPolynomial = maskedWitnessPolynomial
         self.maskedRowPolynomials = maskedRowPolynomials
-        self.blindingWitnessPolynomial = blindingWitnessPolynomial
-        self.blindingRowPolynomials = blindingRowPolynomials
         self.maskedQueries = maskedQueries
-        self.blindingQueries = blindingQueries
         self.pcsBatchSeedDigest = pcsBatchSeedDigest
-        self.blindingBatchSeedDigest = blindingBatchSeedDigest
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case operation
+        case maskedWitnessPolynomial
+        case maskedRowPolynomials
+        case maskedQueries
+        case pcsBatchSeedDigest
+        case blindingWitnessPolynomial
+        case blindingRowPolynomials
+        case blindingQueries
+        case blindingBatchSeedDigest
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyKeys: [CodingKeys] = [
+            .blindingWitnessPolynomial,
+            .blindingRowPolynomials,
+            .blindingQueries,
+            .blindingBatchSeedDigest,
+        ]
+        if let legacyKey = legacyKeys.first(where: { container.contains($0) }) {
+            throw DecodingError.dataCorruptedError(
+                forKey: legacyKey,
+                in: container,
+                debugDescription: "legacy cluster seal packet includes blinding share data"
+            )
+        }
+        self.operation = try container.decode(HachiClusterSealOperation.self, forKey: .operation)
+        self.maskedWitnessPolynomial = try container.decode(MultilinearPoly.self, forKey: .maskedWitnessPolynomial)
+        self.maskedRowPolynomials = try container.decode([MultilinearPoly].self, forKey: .maskedRowPolynomials)
+        self.maskedQueries = try container.decodeIfPresent([SpartanPCSQuery<Fq>].self, forKey: .maskedQueries) ?? []
+        self.pcsBatchSeedDigest = try container.decodeIfPresent([UInt8].self, forKey: .pcsBatchSeedDigest) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(operation, forKey: .operation)
+        try container.encode(maskedWitnessPolynomial, forKey: .maskedWitnessPolynomial)
+        try container.encode(maskedRowPolynomials, forKey: .maskedRowPolynomials)
+        try container.encode(maskedQueries, forKey: .maskedQueries)
+        try container.encode(pcsBatchSeedDigest, forKey: .pcsBatchSeedDigest)
     }
 
     public func serialize() throws -> Data {
@@ -558,29 +631,11 @@ public struct HachiClusterSealWorkPacket: Sendable, Codable, Equatable {
                     traceCollector: nil
                 )
             }
-            let blindingWitnessCommitment = try backend.commit(
-                label: .witness(),
-                polynomial: blindingWitnessPolynomial,
-                context: metalContext,
-                traceCollector: nil
-            )
-            let blindingRowCommitments = try blindingRowPolynomials.enumerated().map { index, polynomial in
-                try backend.commit(
-                    label: .matrixRow(index),
-                    polynomial: polynomial,
-                    context: metalContext,
-                    traceCollector: nil
-                )
-            }
             return HachiClusterSealWorkResult(
                 operation: .commit,
                 commitments: HachiClusterSealCommitments(
                     witnessCommitment: witnessCommitment,
-                    matrixEvaluationCommitments: matrixEvaluationCommitments,
-                    blindingCommitments: SpartanBlindingCommitments(
-                        witness: blindingWitnessCommitment,
-                        matrixRows: blindingRowCommitments
-                    )
+                    matrixEvaluationCommitments: matrixEvaluationCommitments
                 ),
                 openings: nil
             )
@@ -592,25 +647,15 @@ public struct HachiClusterSealWorkPacket: Sendable, Codable, Equatable {
                 context: metalContext,
                 traceCollector: nil
             )
-            let blindingOpeningProof = try backend.openBatch(
-                polynomials: blindingPolynomialsByOracle,
-                queries: blindingQueries,
-                batchSeedDigest: blindingBatchSeedDigest,
-                context: metalContext,
-                traceCollector: nil
-            )
             return HachiClusterSealWorkResult(
                 operation: .open,
                 commitments: nil,
-                openings: HachiClusterSealOpenings(
-                    pcsOpeningProof: pcsOpeningProof,
-                    blindingOpeningProof: blindingOpeningProof
-                )
+                openings: HachiClusterSealOpenings(pcsOpeningProof: pcsOpeningProof)
             )
         }
     }
 
-    private var maskedPolynomialsByOracle: [SpartanOracleID: MultilinearPoly] {
+    fileprivate var maskedPolynomialsByOracle: [SpartanOracleID: MultilinearPoly] {
         Dictionary(
             uniqueKeysWithValues:
                 [(.witness(), maskedWitnessPolynomial)]
@@ -618,13 +663,6 @@ public struct HachiClusterSealWorkPacket: Sendable, Codable, Equatable {
         )
     }
 
-    private var blindingPolynomialsByOracle: [SpartanOracleID: MultilinearPoly] {
-        Dictionary(
-            uniqueKeysWithValues:
-                [(.witness(), blindingWitnessPolynomial)]
-                + blindingRowPolynomials.enumerated().map { (.matrixRow($0.offset), $0.element) }
-        )
-    }
 }
 
 public struct HachiClusterSealWorkResult: Sendable, Codable, Equatable {
@@ -658,10 +696,48 @@ public struct HachiClusterSealWorkResult: Sendable, Codable, Equatable {
     }
 
     public func isValid(for packet: HachiClusterSealWorkPacket) -> Bool {
-        guard let expected = try? packet.execute() else {
+        guard operation == packet.operation else {
             return false
         }
-        return expected == self
+        switch packet.operation {
+        case .commit:
+            guard let expected = try? packet.execute() else {
+                return false
+            }
+            return expected == self
+        case .open:
+            guard commitments == nil, let openings else {
+                return false
+            }
+            do {
+                let backend = HachiPCSBackend()
+                let expectedCommitments = try Dictionary(
+                    uniqueKeysWithValues: packet.maskedPolynomialsByOracle.map { oracle, polynomial in
+                        (
+                            oracle,
+                            try backend.commit(
+                                label: oracle,
+                                polynomial: polynomial,
+                                context: nil,
+                                traceCollector: nil
+                            )
+                        )
+                    }
+                )
+                var diagnostics = HachiVerificationDiagnostics()
+                return try backend.verifyBatch(
+                    commitments: expectedCommitments,
+                    queries: packet.maskedQueries,
+                    proof: openings.pcsOpeningProof,
+                    batchSeedDigest: packet.pcsBatchSeedDigest,
+                    context: nil,
+                    traceCollector: nil,
+                    diagnostics: &diagnostics
+                )
+            } catch {
+                return false
+            }
+        }
     }
 }
 

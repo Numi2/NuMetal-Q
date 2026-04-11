@@ -225,6 +225,79 @@ final class ClusterWorkPacketTests: XCTestCase {
         XCTAssertNotNil(sealResult.openings)
     }
 
+    func testHachiSealWorkPacketDoesNotSerializeBlindingShareFields() throws {
+        let encoded = try makeSealOpenPacket().serialize()
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        XCTAssertNil(object["blindingWitnessPolynomial"])
+        XCTAssertNil(object["blindingRowPolynomials"])
+        XCTAssertNil(object["blindingQueries"])
+        XCTAssertNil(object["blindingBatchSeedDigest"])
+    }
+
+    func testHachiSealWorkPacketRejectsLegacyBlindingShareFields() throws {
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try makeSealOpenPacket().serialize()) as? [String: Any]
+        )
+        object["blindingQueries"] = []
+        let legacy = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        XCTAssertThrowsError(try HachiClusterSealWorkPacket.deserialize(legacy))
+    }
+
+    func testClusterSealFlowDelegatesMaskedShareOnlyAndVerifies() async throws {
+        let engine = try await AcceptanceSupport.makeEngine()
+        let compiledShape = try AcceptanceSupport.makeCompiledShape(name: "ClusterSealSplitShare")
+        let context = await engine.createContext(
+            compiledShape: compiledShape,
+            policy: .standard,
+            appID: "NuMetalQ.Tests.ClusterSeal",
+            teamID: "NuMetalQ",
+            attestationVerifier: nonEmptyAttestationVerifier
+        )
+        let handle = try await context.seed(
+            witness: AcceptanceSupport.makeWitness(seed: 101),
+            publicInputs: [Fq(101), Fq(108)],
+            publicHeader: AcceptanceSupport.packedPublicHeader([Fq(101), Fq(108)])
+        )
+        let principal = try await engine.startClusterAsPrincipal(
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: nonEmptyAttestationVerifier
+        )
+        let coProver = try await engine.startClusterAsCoProver(
+            fragmentSigner: AcceptanceSupport.signer,
+            peerVerifier: AcceptanceSupport.verifier,
+            attestationVerifier: nonEmptyAttestationVerifier
+        )
+        try await coProver.installWorkExecutor(await engine.clusterWorkExecutor())
+
+        let principalID = await principal.deviceID
+        let coProverID = await coProver.deviceID
+        try await principal.pair(peerDeviceID: coProverID, sharedSecret: AcceptanceSupport.sharedSecret)
+        try await coProver.pair(peerDeviceID: principalID, sharedSecret: AcceptanceSupport.sharedSecret)
+
+        let export = try await context.sealUsingCluster(
+            handle,
+            sessionKey: AcceptanceSupport.makeSessionKey(),
+            clusterSession: principal,
+            attestation: Data("cluster-attestation".utf8),
+            signerKeyID: Data("test-signer".utf8),
+            dispatchFragment: { fragment in
+                try await coProver.processFragment(fragment)
+            },
+            signEnvelope: AcceptanceSupport.signer
+        )
+        let verification = try await context.verify(
+            envelope: export.proofEnvelope,
+            verifySignature: AcceptanceSupport.verifier,
+            expectedSignerKeyID: Data("test-signer".utf8),
+            requireAttestation: true
+        )
+
+        XCTAssertTrue(verification.isValid)
+    }
+
     func testHachiSealWorkResultRejectsTamperedCommitments() throws {
         let packet = makeSealCommitPacket()
         let valid = try packet.execute()
@@ -236,8 +309,7 @@ final class ClusterWorkPacketTests: XCTestCase {
             operation: .commit,
             commitments: HachiClusterSealCommitments(
                 witnessCommitment: tampered(commitment: commitments.witnessCommitment),
-                matrixEvaluationCommitments: commitments.matrixEvaluationCommitments,
-                blindingCommitments: commitments.blindingCommitments
+                matrixEvaluationCommitments: commitments.matrixEvaluationCommitments
             ),
             openings: nil
         )
@@ -464,13 +536,6 @@ final class ClusterWorkPacketTests: XCTestCase {
             ),
             maskedRowPolynomials: [
                 MultilinearPoly(numVars: 1, evals: [Fq(7), Fq(11)])
-            ],
-            blindingWitnessPolynomial: MultilinearPoly(
-                numVars: 1,
-                evals: [Fq(13), Fq(17)]
-            ),
-            blindingRowPolynomials: [
-                MultilinearPoly(numVars: 1, evals: [Fq(19), Fq(23)])
             ]
         )
     }
@@ -485,23 +550,11 @@ final class ClusterWorkPacketTests: XCTestCase {
             maskedRowPolynomials: [
                 MultilinearPoly(numVars: 1, evals: [Fq(7), Fq(11)])
             ],
-            blindingWitnessPolynomial: MultilinearPoly(
-                numVars: 1,
-                evals: [Fq(13), Fq(17)]
-            ),
-            blindingRowPolynomials: [
-                MultilinearPoly(numVars: 1, evals: [Fq(19), Fq(23)])
-            ],
             maskedQueries: [
-                SpartanPCSQuery(oracle: .witness(), point: [Fq(29)], value: .zero),
-                SpartanPCSQuery(oracle: .matrixRow(0), point: [Fq(31)], value: .zero)
+                SpartanPCSQuery(oracle: .witness(), point: [Fq(29)], value: Fq(61)),
+                SpartanPCSQuery(oracle: .matrixRow(0), point: [Fq(31)], value: Fq(131))
             ],
-            blindingQueries: [
-                SpartanPCSQuery(oracle: .witness(), point: [Fq(29)], value: .zero),
-                SpartanPCSQuery(oracle: .matrixRow(0), point: [Fq(31)], value: .zero)
-            ],
-            pcsBatchSeedDigest: [UInt8](repeating: 0xAA, count: 32),
-            blindingBatchSeedDigest: [UInt8](repeating: 0xBB, count: 32)
+            pcsBatchSeedDigest: [UInt8](repeating: 0xAA, count: 32)
         )
     }
 

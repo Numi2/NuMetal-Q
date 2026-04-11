@@ -256,10 +256,25 @@ public actor HachiSealEngine: NuSealCompiler {
                 return fail("matrix commitment count mismatch")
             }
 
+            guard let maskedCommitmentMap = maskedCommitments(
+                for: proof.terminalProof,
+                expectedMatrixCount: shape.relation.matrices.count,
+                diagnostics: &diagnostics
+            ) else {
+                return HachiVerificationOutcome(isValid: false, diagnostics: diagnostics)
+            }
+            guard let blindingCommitmentMap = blindingCommitments(
+                for: proof.terminalProof,
+                expectedMatrixCount: shape.relation.matrices.count,
+                diagnostics: &diagnostics
+            ) else {
+                return HachiVerificationOutcome(isValid: false, diagnostics: diagnostics)
+            }
+
             let maskedQueries = maskedQueries(for: proof.terminalProof)
             let blindingQueries = blindingQueries(for: proof.terminalProof)
             guard try pcsBackend.verifyBatch(
-                commitments: maskedCommitments(for: proof.terminalProof),
+                commitments: maskedCommitmentMap,
                 queries: maskedQueries,
                 proof: proof.terminalProof.pcsOpeningProof,
                 transcript: &transcript,
@@ -271,7 +286,7 @@ public actor HachiSealEngine: NuSealCompiler {
             }
 
             guard try pcsBackend.verifyBatch(
-                commitments: blindingCommitments(for: proof.terminalProof),
+                commitments: blindingCommitmentMap,
                 queries: blindingQueries,
                 proof: proof.terminalProof.blindingOpeningProof,
                 transcript: &transcript,
@@ -387,12 +402,11 @@ private extension HachiSealEngine {
             shape: shape,
             statement: statement
         )
+        let activeMetalContext = metalContext(for: .automatic)
         let commitPacket = HachiClusterSealWorkPacket(
             operation: .commit,
             maskedWitnessPolynomial: prepared.maskedWitnessPolynomial,
-            maskedRowPolynomials: prepared.maskedRowPolynomials,
-            blindingWitnessPolynomial: prepared.blindingWitnessPolynomial,
-            blindingRowPolynomials: prepared.blindingRowPolynomials
+            maskedRowPolynomials: prepared.maskedRowPolynomials
         )
         let commitResult = try await performClusterSealWork(
             packet: commitPacket,
@@ -405,6 +419,24 @@ private extension HachiSealEngine {
               let commitments = commitResult.commitments else {
             throw SpartanSealError.invalidClusterSealResult(.witness())
         }
+        let blindingWitnessCommitment = try pcsBackend.commit(
+            label: .witness(),
+            polynomial: prepared.blindingWitnessPolynomial,
+            context: activeMetalContext,
+            traceCollector: nil
+        )
+        let blindingRowCommitments = try prepared.blindingRowPolynomials.enumerated().map { index, polynomial in
+            try pcsBackend.commit(
+                label: .matrixRow(index),
+                polynomial: polynomial,
+                context: activeMetalContext,
+                traceCollector: nil
+            )
+        }
+        let blindingCommitments = SpartanBlindingCommitments(
+            witness: blindingWitnessCommitment,
+            matrixRows: blindingRowCommitments
+        )
 
         let evaluated = try evaluateTerminalProofState(
             shape: shape,
@@ -412,18 +444,14 @@ private extension HachiSealEngine {
             prepared: prepared,
             witnessCommitment: commitments.witnessCommitment,
             matrixEvaluationCommitments: commitments.matrixEvaluationCommitments,
-            blindingCommitments: commitments.blindingCommitments
+            blindingCommitments: blindingCommitments
         )
         let openPacket = HachiClusterSealWorkPacket(
             operation: .open,
             maskedWitnessPolynomial: prepared.maskedWitnessPolynomial,
             maskedRowPolynomials: prepared.maskedRowPolynomials,
-            blindingWitnessPolynomial: prepared.blindingWitnessPolynomial,
-            blindingRowPolynomials: prepared.blindingRowPolynomials,
             maskedQueries: evaluated.maskedQueries,
-            blindingQueries: evaluated.blindingQueries,
-            pcsBatchSeedDigest: evaluated.pcsBatchSeedDigest,
-            blindingBatchSeedDigest: evaluated.blindingBatchSeedDigest
+            pcsBatchSeedDigest: evaluated.pcsBatchSeedDigest
         )
         let openResult = try await performClusterSealWork(
             packet: openPacket,
@@ -436,17 +464,24 @@ private extension HachiSealEngine {
               let openings = openResult.openings else {
             throw SpartanSealError.invalidClusterSealResult(.witness())
         }
+        let blindingOpeningProof = try pcsBackend.openBatch(
+            polynomials: prepared.blindingPolynomialsByOracle,
+            queries: evaluated.blindingQueries,
+            batchSeedDigest: evaluated.blindingBatchSeedDigest,
+            context: activeMetalContext,
+            traceCollector: nil
+        )
 
         return HachiTerminalProof(
             witnessCommitment: commitments.witnessCommitment,
             matrixEvaluationCommitments: commitments.matrixEvaluationCommitments,
-            blindingCommitments: commitments.blindingCommitments,
+            blindingCommitments: blindingCommitments,
             outerSumcheck: evaluated.outerSumcheck,
             innerSumcheck: evaluated.innerSumcheck,
             claimedEvaluations: evaluated.claimedEvaluations,
             blindingEvaluations: evaluated.blindingEvaluations,
             pcsOpeningProof: openings.pcsOpeningProof,
-            blindingOpeningProof: openings.blindingOpeningProof
+            blindingOpeningProof: blindingOpeningProof
         )
     }
 
@@ -490,11 +525,11 @@ private extension HachiSealEngine {
             )
         }
 
-        let randomness = oracleRandomnessMap(matrixCount: shape.relation.matrices.count)
+        let randomness = try oracleRandomnessMap(matrixCount: shape.relation.matrices.count)
         let witnessBlind = try shape.blindPolynomial(
             witnessPolynomial,
             for: .witness(),
-            randomness: randomness[.witness()] ?? randomBytes(count: 32)
+            randomness: try oracleRandomness(for: .witness(), in: randomness)
         )
 
         var maskedRowPolynomials = [MultilinearPoly]()
@@ -505,7 +540,7 @@ private extension HachiSealEngine {
             let blinded = try shape.blindPolynomial(
                 polynomial,
                 for: .matrixRow(index),
-                randomness: randomness[.matrixRow(index)] ?? randomBytes(count: 32)
+                randomness: try oracleRandomness(for: .matrixRow(index), in: randomness)
             )
             maskedRowPolynomials.append(blinded.blinded)
             blindingRowPolynomials.append(blinded.blinding)
@@ -707,19 +742,31 @@ private extension HachiSealEngine {
         writer.appendLengthPrefixed(Data(commitment.statementDigest))
     }
 
-    func maskedCommitments(for proof: HachiTerminalProof) -> [SpartanOracleID: HachiPCSCommitment] {
-        Dictionary(
-            uniqueKeysWithValues:
-                [(.witness(), proof.witnessCommitment)]
-                + proof.matrixEvaluationCommitments.map { ($0.oracle, $0) }
+    func maskedCommitments(
+        for proof: HachiTerminalProof,
+        expectedMatrixCount: Int,
+        diagnostics: inout HachiVerificationDiagnostics
+    ) -> [SpartanOracleID: HachiPCSCommitment]? {
+        HachiProofCommitmentMap.commitmentMap(
+            witness: proof.witnessCommitment,
+            matrixRows: proof.matrixEvaluationCommitments,
+            expectedMatrixCount: expectedMatrixCount,
+            label: "masked",
+            diagnostics: &diagnostics
         )
     }
 
-    func blindingCommitments(for proof: HachiTerminalProof) -> [SpartanOracleID: HachiPCSCommitment] {
-        Dictionary(
-            uniqueKeysWithValues:
-                [(.witness(), proof.blindingCommitments.witness)]
-                + proof.blindingCommitments.matrixRows.map { ($0.oracle, $0) }
+    func blindingCommitments(
+        for proof: HachiTerminalProof,
+        expectedMatrixCount: Int,
+        diagnostics: inout HachiVerificationDiagnostics
+    ) -> [SpartanOracleID: HachiPCSCommitment]? {
+        HachiProofCommitmentMap.commitmentMap(
+            witness: proof.blindingCommitments.witness,
+            matrixRows: proof.blindingCommitments.matrixRows,
+            expectedMatrixCount: expectedMatrixCount,
+            label: "blinding",
+            diagnostics: &diagnostics
         )
     }
 
@@ -953,17 +1000,26 @@ private extension HachiSealEngine {
         return accumulator
     }
 
-    func oracleRandomnessMap(matrixCount: Int) -> [SpartanOracleID: [UInt8]] {
-        var values: [SpartanOracleID: [UInt8]] = [.witness(): randomBytes(count: 32)]
+    func oracleRandomnessMap(matrixCount: Int) throws -> [SpartanOracleID: [UInt8]] {
+        var values: [SpartanOracleID: [UInt8]] = [.witness(): try randomBytes(count: 32)]
         for index in 0..<matrixCount {
-            values[.matrixRow(index)] = randomBytes(count: 32)
+            values[.matrixRow(index)] = try randomBytes(count: 32)
         }
         return values
     }
 
-    func randomBytes(count: Int) -> [UInt8] {
-        var rng = SystemRandomNumberGenerator()
-        return (0..<count).map { _ in UInt8.random(in: .min ... .max, using: &rng) }
+    func oracleRandomness(
+        for oracle: SpartanOracleID,
+        in values: [SpartanOracleID: [UInt8]]
+    ) throws -> [UInt8] {
+        guard let randomness = values[oracle] else {
+            throw SpartanSealError.missingPCSOracle(oracle)
+        }
+        return randomness
+    }
+
+    func randomBytes(count: Int) throws -> [UInt8] {
+        try NuSecureRandom.bytes(count: count)
     }
 
     func batchScheduleDigest(for proof: HachiPCSBatchOpeningProof) -> [UInt8] {
@@ -988,6 +1044,49 @@ private extension HachiSealEngine {
         case .cpuOnly:
             return nil
         }
+    }
+}
+
+enum HachiProofCommitmentMap {
+    static func commitmentMap(
+        witness: HachiPCSCommitment,
+        matrixRows: [HachiPCSCommitment],
+        expectedMatrixCount: Int,
+        label: String,
+        diagnostics: inout HachiVerificationDiagnostics
+    ) -> [SpartanOracleID: HachiPCSCommitment]? {
+        guard witness.oracle == .witness() else {
+            diagnostics.recordFailure("invalid \(label) witness commitment oracle")
+            return nil
+        }
+        guard matrixRows.count == expectedMatrixCount else {
+            diagnostics.recordFailure("invalid \(label) matrix commitment count")
+            return nil
+        }
+
+        var commitments: [SpartanOracleID: HachiPCSCommitment] = [.witness(): witness]
+        commitments.reserveCapacity(expectedMatrixCount + 1)
+        for (index, commitment) in matrixRows.enumerated() {
+            let expectedOracle = SpartanOracleID.matrixRow(index)
+            guard commitment.oracle == expectedOracle else {
+                diagnostics.recordFailure(
+                    "invalid \(label) matrix commitment oracle at index \(index)"
+                )
+                return nil
+            }
+            guard commitments[expectedOracle] == nil else {
+                diagnostics.recordFailure(
+                    "duplicate \(label) commitment oracle \(oracleDiagnosticName(expectedOracle))"
+                )
+                return nil
+            }
+            commitments[expectedOracle] = commitment
+        }
+        return commitments
+    }
+
+    private static func oracleDiagnosticName(_ oracle: SpartanOracleID) -> String {
+        "\(oracle.kind.rawValue):\(oracle.index ?? -1)"
     }
 }
 

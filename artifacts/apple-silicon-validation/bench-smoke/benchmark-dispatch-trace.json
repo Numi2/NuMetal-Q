@@ -1,0 +1,206 @@
+{
+  "generatedAt" : "2026-04-10T23:48:37Z",
+  "observability" : {
+    "counterCaptureState" : "unsupported",
+    "counterCapturedDispatches" : 0,
+    "counterCapturedPercentage" : 0,
+    "counterFallbackReasons" : [
+      "dispatch-boundary counters unsupported on this host; used command-buffer timeline"
+    ],
+    "counterSamplingAvailable" : false,
+    "gpuFamilyTag" : "apple9",
+    "gpuName" : "Apple M4",
+    "timingSourceBreakdown" : [
+      {
+        "dispatchCount" : 8,
+        "timingSource" : "command-buffer-timeline"
+      }
+    ],
+    "totalDispatches" : 8
+  },
+  "seal" : [
+    {
+      "iteration" : 0,
+      "samples" : [
+
+      ],
+      "suite" : "seal",
+      "workloadName" : "auth-policy-sparse"
+    },
+    {
+      "iteration" : 0,
+      "samples" : [
+
+      ],
+      "suite" : "seal",
+      "workloadName" : "rollup-settlement-dense"
+    }
+  ],
+  "verifier" : [
+    {
+      "iteration" : 0,
+      "samples" : [
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSampleCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpuMilliseconds" : 12.184833,
+          "dispatchLabel" : "piCCS.matrix_lift[0]",
+          "gpuEndOffsetUs" : 10.999850928783417,
+          "gpuMilliseconds" : 0.010999850928783417,
+          "gpuStartOffsetUs" : 0,
+          "gpuTimingSource" : "command-buffer-timeline",
+          "iteration" : 0,
+          "kernelFamily" : "nu_matrix_lift",
+          "ordinal" : 0,
+          "stage" : "piCCS",
+          "threadExecutionWidth" : 32,
+          "threadgroupWidth" : 64
+        }
+      ],
+      "suite" : "verifier",
+      "workloadName" : "piccs-verify"
+    },
+    {
+      "iteration" : 0,
+      "samples" : [
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSampleCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpuMilliseconds" : 1.785667,
+          "dispatchLabel" : "piRLC.cross_terms",
+          "gpuEndOffsetUs" : 1329.250168055296,
+          "gpuMilliseconds" : 1.329250168055296,
+          "gpuStartOffsetUs" : 0,
+          "gpuTimingSource" : "command-buffer-timeline",
+          "iteration" : 0,
+          "kernelFamily" : "nu_ring_mul_ag64_d64",
+          "ordinal" : 0,
+          "stage" : "piRLC",
+          "threadExecutionWidth" : 32,
+          "threadgroupWidth" : 64
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSampleCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpuMilliseconds" : 34.676875,
+          "dispatchLabel" : "piRLC.cross_term_commit_batch",
+          "gpuEndOffsetUs" : 27881.12498819828,
+          "gpuMilliseconds" : 26.551874820142984,
+          "gpuStartOffsetUs" : 1329.250168055296,
+          "gpuTimingSource" : "command-buffer-timeline",
+          "iteration" : 0,
+          "kernelFamily" : "nu_sparse_rot_commit_batch",
+          "ordinal" : 1,
+          "stage" : "piRLC",
+          "threadExecutionWidth" : 32,
+          "threadgroupWidth" : 64
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSampleCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpuMilliseconds" : 0.572708,
+          "dispatchLabel" : "piRLC.fold_witness",
+          "gpuEndOffsetUs" : 27911.416720598936,
+          "gpuMilliseconds" : 0.030291732400655746,
+          "gpuStartOffsetUs" : 27881.12498819828,
+          "gpuTimingSource" : "command-buffer-timeline",
+          "iteration" : 0,
+          "kernelFamily" : "nu_ring_bind_fold_batch",
+          "ordinal" : 2,
+          "stage" : "piRLC",
+          "threadExecutionWidth" : 32,
+          "threadgroupWidth" : 64
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSampleCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpuMilliseconds" : 0.237541,
+          "dispatchLabel" : "piRLC.fold_commitment",
+          "gpuEndOffsetUs" : 27940.37526473403,
+          "gpuMilliseconds" : 0.02895854413509369,
+          "gpuStartOffsetUs" : 27911.416720598936,
+          "gpuTimingSource" : "command-buffer-timeline",
+          "iteration" : 0,
+          "kernelFamily" : "nu_ring_bind_fold_batch",
+          "ordinal" : 3,
+          "stage" : "piRLC",
+          "threadExecutionWidth" : 32,
+          "threadgroupWidth" : 64
+        }
+      ],
+      "suite" : "verifier",
+      "workloadName" : "pirlc-verify"
+    },
+    {
+      "iteration" : 0,
+      "samples" : [
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSampleCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpuMilliseconds" : 0.478292,
+          "dispatchLabel" : "piDEC.decompose",
+          "gpuEndOffsetUs" : 4.74974513053894,
+          "gpuMilliseconds" : 0.00474974513053894,
+          "gpuStartOffsetUs" : 0,
+          "gpuTimingSource" : "command-buffer-timeline",
+          "iteration" : 0,
+          "kernelFamily" : "nu_pidec_decompose",
+          "ordinal" : 0,
+          "stage" : "piDEC",
+          "threadExecutionWidth" : 32,
+          "threadgroupWidth" : 256
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSampleCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpuMilliseconds" : 34.976958,
+          "dispatchLabel" : "piDEC.limb_commit_batch",
+          "gpuEndOffsetUs" : 26384.37459245324,
+          "gpuMilliseconds" : 26.379624847322702,
+          "gpuStartOffsetUs" : 4.74974513053894,
+          "gpuTimingSource" : "command-buffer-timeline",
+          "iteration" : 0,
+          "kernelFamily" : "nu_sparse_rot_commit_batch",
+          "ordinal" : 1,
+          "stage" : "piDEC",
+          "threadExecutionWidth" : 32,
+          "threadgroupWidth" : 64
+        },
+        {
+          "counterCaptureState" : "unsupported",
+          "counterFallbackReason" : "dispatch-boundary counters unsupported on this host; used command-buffer timeline",
+          "counterSampleCaptured" : false,
+          "counterSamplingAvailable" : false,
+          "cpuMilliseconds" : 1.355792,
+          "dispatchLabel" : "piDEC.reconstruct_commitment",
+          "gpuEndOffsetUs" : 26634.333189576864,
+          "gpuMilliseconds" : 0.2499585971236229,
+          "gpuStartOffsetUs" : 26384.37459245324,
+          "gpuTimingSource" : "command-buffer-timeline",
+          "iteration" : 0,
+          "kernelFamily" : "nu_ring_bind_fold_batch",
+          "ordinal" : 2,
+          "stage" : "piDEC",
+          "threadExecutionWidth" : 32,
+          "threadgroupWidth" : 64
+        }
+      ],
+      "suite" : "verifier",
+      "workloadName" : "pidec-verify"
+    }
+  ]
+}
