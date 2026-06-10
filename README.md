@@ -15,18 +15,18 @@ Recent implementation work is focused on the Metal-first seal path:
 - Seal workload benchmarks preflight packed witnesses for PiDEC representability before proving work starts.
 - Benchmark reports now include norm ceiling, generator headroom, preflight maximum centered magnitude, representability status, CPU/Metal verification parity, GPU timing, and dispatch trace state.
 
-`SealProof.currentVersion` is `9`; `PublicSealProof.currentVersion` is `5`.
+`SealProof.currentVersion` is `9`; `PublicSealProof.currentVersion` is `6`.
 
 ## Repository Layout
 
 - `NuMetal-Q/`: library sources grouped by subsystem.
 - `SealXOF/`: C Keccak/XOF helper target used by seal proof code.
 - `Examples/`: acceptance demo and benchmark runners.
-- `Tests/`: CPU-safe package tests and Apple-silicon parity coverage.
+- `Tests/`: default CPU-safe unit tests plus heavier integration suites kept out of the default SwiftPM test target.
 - `docs/`: development, testing, benchmarking, protocol, and state-of-the-art notes.
 - `Scripts/build_metal_artifacts.sh`: rebuilds the offline Metal artifact bundle.
-- `Scripts/run_apple_silicon_validation.sh`: deterministic Apple-silicon validation lane for Metal proving and CPU/Metal parity.
-- `Scripts/check_repo_metadata.sh`: docs/version drift checker used locally and in CI.
+- `Scripts/run_apple_silicon_validation.sh`: manual Apple-silicon validation lane for Metal proving and CPU/Metal parity.
+- `Scripts/check_repo_metadata.sh`: source/docs version drift checker used locally and in CI.
 
 Bundled Metal artifacts in `NuMetal-Q/NuMetal/Compiled/` are source-controlled runtime inputs. Local build output under `.build/` and generated benchmark reports under `artifacts/benchmarks/` are not.
 
@@ -49,7 +49,7 @@ swift run NuMetalQBenchmarks --list-workloads
 swift run NuMetalQBenchmarks --seal-workload auth-policy-sparse
 ```
 
-Apple-silicon validation:
+Manual Apple-silicon validation:
 
 ```bash
 Scripts/run_apple_silicon_validation.sh [OUTPUT_DIR]

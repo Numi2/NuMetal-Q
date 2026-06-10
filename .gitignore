@@ -3,6 +3,7 @@
 DerivedData/
 
 artifacts/benchmarks/
+output/pdf/
 
 NuMetal-Q.xcodeproj/xcuserdata/
 NuMetal-Q.xcodeproj/project.xcworkspace/xcuserdata/

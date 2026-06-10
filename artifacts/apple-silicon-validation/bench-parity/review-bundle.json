@@ -6,7 +6,7 @@
   "canonicalBackendID" : "SPARTAN-HACHI-AG64-K4-DNU",
   "canonicalSealWireMagic" : "NuSeal",
   "comparisonTemplatePath" : "/Users/home/NuMetal-Q/artifacts/apple-silicon-validation/bench-parity/comparison-template.json",
-  "generatedAt" : "2026-04-10T23:52:17Z",
+  "generatedAt" : "2026-04-11T01:03:08Z",
   "protocolNotePath" : "/Users/home/NuMetal-Q/docs/protocol-note.md",
   "stateOfTheArtPath" : "/Users/home/NuMetal-Q/docs/state-of-the-art.md"
 }

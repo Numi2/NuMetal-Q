@@ -6,7 +6,7 @@ NuMetal-Q is authored and validated as a Swift package.
 
 ```bash
 swift build
-swift test --filter TranscriptVectorTests
+swift test
 swift run NuMetalQAcceptanceDemo --help
 swift run NuMetalQBenchmarks --list-workloads
 ```

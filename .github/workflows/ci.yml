@@ -26,13 +26,8 @@ jobs:
       - name: Build
         run: swift build
 
-      - name: Fast CPU-Safe Tests
-        run: |
-          swift test --filter TranscriptVectorTests
-          swift test --filter WitnessPackingTests
-          swift test --filter SupportCodecTests
-          swift test --filter SyncProtocolTests
-          swift test --filter ClusterWorkPacketTests
+      - name: Unit Tests
+        run: swift test
 
       - name: CLI Smoke
         run: |

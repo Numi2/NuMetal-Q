@@ -10,7 +10,7 @@
 
 ## Implemented Changes
 - `ShapePack` now carries `version`, `gpuLiftedMatrices`, and a signed `gpuArtifactDigest`.
-- `MetalStorageLayout.currentVersion` is now `1`.
+- `MetalStorageLayout.currentVersion` is now `3`.
 - `ShapePack.currentVersion` is now `4`.
 - `KernelConfig` now includes:
   - `threadgroupSize`
@@ -109,19 +109,16 @@
   - allowing buffer allocation fallback outside heaps when heap allocation fails
   - short-circuiting empty sparse matrices in the Metal matrix path
 
-## Validation Commands
+## Default Validation Commands
 - `Scripts/check_repo_metadata.sh`
 - `swift build`
-- `swift test --filter TranscriptVectorTests`
-- `swift test --filter WitnessPackingTests`
-- `swift test --filter SupportCodecTests`
-- `swift test --filter SyncProtocolTests`
-- `swift test --filter CryptoHardeningTests`
-- `swift test --filter ClusterWorkPacketTests`
-- `Scripts/build_metal_artifacts.sh`
+- `swift test`
 - `swift run NuMetalQAcceptanceDemo --help`
 - `swift run NuMetalQBenchmarks --help`
 - `swift run NuMetalQBenchmarks --list-workloads`
+
+## Manual Hardware Commands
+- `Scripts/build_metal_artifacts.sh`
 - `swift run NuMetalQBenchmarks --iterations 1 --warmups 0 --output /tmp/numeq-bench-smoke`
 - `Scripts/run_apple_silicon_validation.sh [OUTPUT_DIR]`
 
