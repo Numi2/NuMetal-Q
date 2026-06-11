@@ -1,107 +1,80 @@
-# Security Audit Report
+# Security Readiness Report
 
-## Executive Summary
+## Scope
 
-This review focused on the proof transcript, recursive folding, sealing and verification flow, attestation handling, vault persistence, sync and cluster transport, and the custom cSHAKE implementation. I did not run the test suite.
+This repository-local review covers the current Swift package state for proof transcripts, recursive folding, seal/envelope verification, attestation binding, sync and cluster transport, vault persistence, typed prover persistence, and the cSHAKE/XOF boundary.
 
-The most serious cryptographic weakness I found is in `PiRLC`: field-valued claim components are folded with `rho.coeffs[0]`, so each scalar challenge lives in `{ -1, 0, 1, 2 }` instead of a full-field domain. That collapses the randomness protecting folded public inputs, matrix evaluations, and relaxation factors from field-sized entropy to 2 bits per child.
+This is not an external cryptanalysis report. The profile certificate remains explicit that the in-repo security estimator is informational and that production parameter claims require independent review.
 
-I also found a systemic attestation design bug: the same serialized attestation blob is reused across phases while being validated under different `AttestationPurpose` values, and in sync flows under different local/remote device bindings. With a strict verifier, those flows are not satisfiable; with a permissive verifier, the purpose and device fields stop carrying security meaning.
+## Current Readiness State
 
-Separately, public seal verification does not semantically enforce several fields exposed in `PublicSealStatement`, the public typed prover bypasses the witness-class policy model and persists full typed traces as `.public`, and the cSHAKE C shim still fails open on allocation failure.
+The default SwiftPM test target now includes the security and crypto-hardening suites that previously lived outside the normal `swift test` lane:
 
-## Critical Findings
+- envelope signature, namespace, attestation, and proof-format rejection tests
+- transcript vector and challenge-domain tests
+- PiCCS, PiRLC, PiDEC, and sum-check negative tests
+- cSHAKE/XOF and binary codec tests
+- sync encryption, strict attestation binding, and replay-defense tests
+- cluster packet validation, delegation attestation, and replay-defense tests
+- typed prover vault persistence, tamper, wrong-key, and forged-header tests
 
-### 1. `PiRLC` folds field-valued claim components with only a 2-bit scalar projection of each ring challenge
+Metal-dependent tests skip on hosts without a supported Metal device. Apple post-quantum integration tests compile only when `NUMETALQ_ENABLE_APPLE_PQ=1` is set.
 
-Impact: folded public inputs, matrix evaluations, and relaxation factors are protected by only four possible coefficients per child, materially weakening recursive soundness and making collision-style targeting of folded claims much easier than the protocol comments imply.
+## Resolved Historical Findings
 
-Evidence:
+### PiRLC Scalar Challenge Entropy
 
-- `NuMetal-Q/NuFold/PiRLC.swift:113-119` samples `ringChallenges` from `NuSampler.challengeRingFromC(...)` and then derives `scalarChallenges` as `ringChallenges.map { $0.coeffs[0] }`.
-- `NuMetal-Q/NuFold/PiRLC.swift:129-143` uses those 4-value `rhoScalar` values to fold `publicInputs`, `ccsEvaluations`, and `relaxationFactor`.
-- `NuMetal-Q/NuFold/PiRLC.swift:345-387` repeats the same projection in the Metal verifier path.
-- `NuMetal-Q/NuField/Transcript.swift:472-492` shows each coefficient of `challengeRingFromC` is sampled from `C = { -1, 0, 1, 2 }`, so `coeffs[0]` carries only 2 bits of entropy.
+`PiRLC` no longer folds field-valued claims with a 2-bit coefficient projection from the weak ring challenge set. The prover and verifier derive full-field Fiat-Shamir scalar challenges via `PiRLC.scalar_fold` for public inputs, CCS evaluations, and relaxation factors, while ring-valued witness, commitment, and error folding continue to use typed ring challenges from `C = {-1, 0, 1, 2}`.
 
-Why this is a bug:
+Coverage: `CryptoHardeningTests` exercises direct and negative PiRLC verification, statement binding, and inherited error-term binding.
 
-- The comments for `PiRLC` describe a random linear combination over transcript challenges, but the field-valued components are not folded with a field challenge or a high-entropy projection of the ring challenge.
-- Using the constant coefficient gives only four scalar possibilities per folded child.
-- Because the prover and verifier share the same reduction, malformed folded claims can target this tiny challenge space and still verify.
+### Attestation Purpose And Device Binding
 
-## High Findings
+Sync attestation now uses stable author and target device identifiers on both send and receive paths. Cluster attestation validation likewise uses stable principal and co-prover identities for delegation validation. Envelope verification validates attestation under the public verification purpose.
 
-### 2. The same attestation blob is validated under mutually incompatible purposes and device contexts
+Coverage: `SyncProtocolTests`, `EnvelopeSecurityTests`, and `ClusterWorkPacketTests` include strict attestation context tests and mismatch rejection.
 
-Impact: if the attestation verifier actually enforces `purpose`, `localDeviceID`, or `remoteDeviceID`, export/sync/cluster flows become unsatisfiable; if deployments relax those checks to interoperate, the attestation context stops carrying the security meaning the API suggests.
+### Public Seal Statement Semantics
 
-Evidence:
+`PublicSealStatement` no longer exposes accumulator metadata that standalone public verification cannot prove. Public verification binds the backend, transcript ID, shape digest, decider layout digest, seal parameter digest, public header, and public inputs.
 
-- Proof export validates the envelope attestation under `.envelopeExport` in `NuMetal-Q/NuSDK/ProofContext.swift:223-227`, while later proof verification validates the same `envelope.attestation` under `.envelopeVerification` in `NuMetal-Q/NuSDK/ProofContext.swift:557-569` and `NuMetal-Q/NuSDK/NuMeQ.swift:158-180`.
-- Sync send-side validation uses `.syncEnvelope` with `localDeviceID = sender` and `remoteDeviceID = recipient` in `NuMetal-Q/NuVault/SyncProtocol.swift:109-113` and `NuMetal-Q/NuVault/SyncProtocol.swift:424-435`, while receive-side validation reuses the same blob with `localDeviceID = recipient` and `remoteDeviceID = sender` in `NuMetal-Q/NuVault/SyncProtocol.swift:293-297` and `NuMetal-Q/NuVault/SyncProtocol.swift:319-323`.
-- Cluster delegation validates the fragment attestation under `.clusterDelegation` in `NuMetal-Q/NuCluster/ClusterSession.swift:159`, `NuMetal-Q/NuCluster/ClusterSession.swift:191`, and `NuMetal-Q/NuCluster/ClusterSession.swift:220`, then the co-prover revalidates that same `fragment.attestation` under `.clusterExecution` in `NuMetal-Q/NuCluster/ClusterSession.swift:244` using the context builder in `NuMetal-Q/NuCluster/ClusterSession.swift:425-435`.
+Coverage: envelope/security tests reject invalid proof formats, namespace mismatches, public-header mismatches, and malformed seal proof encodings.
 
-Why this matters:
+### Typed Prover Persistence Policy
 
-- There is only one serialized `attestation` field on `ProofEnvelope` and one on `JobFragment`.
-- The code treats those single blobs as if they can simultaneously satisfy different `AttestationPurpose` values and, in sync, opposite local/remote device bindings.
-- The current tests avoid this by using permissive verifiers (`nonEmptyAttestationVerifier`) or by testing only the verification-purpose envelope path, so the stricter intended semantics are not exercised.
+`MetalFoldProver` now computes `maxWitnessClass` from policy-classified typed traces and rejects non-persistable lanes before vault storage rather than hardcoding `.public`.
 
-### 3. Standalone seal verification does not semantically enforce `finalAccumulatorCommitment`, `relaxationFactor`, or `errorTerms`
+Coverage: typed prover tests verify vault round trips, wrong-key rejection, tamper rejection, missing step registration rejection, forged header rejection, and forged child rejection.
 
-Impact: a sealed proof can verify publicly even if these exposed statement fields are inaccurate. Consumers calling `verify(...)` do not actually get assurance about the recursive accumulator metadata the API surfaces and the resume path later trusts.
+### cSHAKE/XOF Failure Boundary
 
-Evidence:
+The C cSHAKE wrapper returns an explicit success code, and Swift callers fail closed if the XOF operation fails.
 
-- `NuMetal-Q/NuSeal/PublicSealArtifacts.swift:17-21` exposes `finalAccumulatorCommitment`, `publicInputs`, `relaxationFactor`, and `errorTerms` as part of `PublicSealStatement`.
-- `NuMetal-Q/NuSeal/HachiSealEngine.swift:655-676` absorbs those fields into the Fiat-Shamir transcript.
-- `NuMetal-Q/NuSeal/HachiSealEngine.swift:223-255` and `NuMetal-Q/NuSeal/HachiSealEngine.swift:935-973` only enforce equations over `publicInputs`, row evaluations, matrix values, and witness evaluations; there is no semantic check tying the proof to `finalAccumulatorCommitment`, `relaxationFactor`, or `errorTerms`.
-- `NuMetal-Q/NuSDK/NuMeQ.swift:189-204` and `NuMetal-Q/NuSDK/ProofContext.swift:578-590` accept the proof once header binding and seal verification succeed.
-- `NuMetal-Q/NuFold/FoldEngine.swift:300-305` later treats those same statement fields as authoritative when restoring a sealed recursive state.
+Coverage: support codec tests assert deterministic and domain-separated cSHAKE output.
 
-Why this matters:
+## Additional Hardening Completed
 
-- These fields are not just inert metadata: the resume path depends on them to match the encrypted accumulator artifact.
-- Public verification, however, only proves the seal decider over the witness/public-input path and transcript commitments, not the truthfulness of these accumulator fields.
-- A malicious prover with signing authority can therefore publish a publicly “valid” envelope whose accumulator metadata is misleading or unusable for resume.
+Signed sync and cluster payload encoders now use the shared canonical binary writer for length-prefixed fields. This removes silent `UInt32(clamping:)` saturation from cryptographic signing and attestation-binding payloads; oversized values now fail closed instead of being encoded with saturated length metadata.
 
-## Medium Findings
+## Verification
 
-### 4. `MetalFoldProver` bypasses the witness-class policy model and persists typed traces as `.public`
+The following checks pass in the current workspace:
 
-Impact: callers can persist device-confined or ephemeral witness material through the public typed prover path, contrary to the trust model documented for `NuPolicy`.
+```bash
+Scripts/check_repo_metadata.sh
+swift build
+swift test
+swift run NuMetalQAcceptanceDemo --help
+swift run NuMetalQBenchmarks --help
+swift run NuMetalQBenchmarks --list-workloads
+NUMETALQ_ENABLE_APPLE_PQ=1 swift test --filter ApplePQIntegrationTests
+```
 
-Evidence:
+The expanded `swift test` run executed 80 tests with 0 failures.
+The optional Apple PQ integration run executed 12 tests with 0 failures on this host.
 
-- `NuMetal-Q/NuVault/NuPolicy.swift:39-40` says policy is enforced at every boundary, including vault persistence.
-- `NuMetal-Q/NuSDK/MetalFoldProver.swift:75-77` and `NuMetal-Q/NuSDK/MetalFoldProver.swift:129-131` immediately store typed states in `FoldVault`.
-- `NuMetal-Q/NuSDK/MetalFoldProver.swift:229-245` hardcodes `maxWitnessClass: .public` when materializing those states.
-- `NuMetal-Q/NuFold/FoldState.swift:27-28` and `NuMetal-Q/NuFold/FoldState.swift:244-249` show `typedTrace` binds the full lowered witness for every DAG node.
-- `NuMetal-Q/NuVault/FoldVault.swift:283-287` persists that optional `typedTrace` payload inside the vault record.
+## Remaining Non-Goals
 
-Why this matters:
-
-- `ProofContext` rejects persistence of `.ephemeralDerived` material before sealing, but the separate public `MetalFoldProver` path has no equivalent policy gate.
-- Hardcoding `.public` also destroys provenance once the state is serialized, so later consumers cannot recover how sensitive the original witness material was.
-
-## Low Findings
-
-### 5. The cSHAKE wrapper still fails open on allocation failure and returns an all-zero digest buffer
-
-Impact: under memory pressure, transcript and digest derivation can silently degrade to zero bytes instead of surfacing an error.
-
-Evidence:
-
-- `SealXOF/keccak_xof.c:242-268` returns early if any intermediate allocation fails.
-- `NuMetal-Q/NuField/Transcript.swift:275-286` preinitializes the output buffer with zeros before calling the C shim and receives no error signal.
-
-Why this matters:
-
-- The Swift caller cannot distinguish “valid digest of zero bytes” from “digest computation aborted”.
-- This is low-probability, but cryptographic failure should be fail-closed.
-
-## Residual Risks And Gaps
-
-- `NuMetal-Q/NuField/NuProfile.swift:465-472` explicitly sets both minimum security-bit gates to `0`, so the profile certificate does not enforce any quantitative release threshold. That is a governance risk rather than a code bug, but it means security claims remain informational unless backed by external review.
-- The seal transcript’s `challengeScalar` path in `NuMetal-Q/NuField/Transcript.swift:48-50` reduces a single 64-bit word modulo `Fq`, unlike the 128-bit reduction used by `NuTranscriptField`. I did not elevate this to a formal finding because the larger structural issues above dominate, but it is still weaker challenge derivation than the rest of the codebase uses.
-- I did not find tests covering any strict attestation verifier across both sides of sync or cluster flows, nor tests asserting that public seal verification rejects tampering of `finalAccumulatorCommitment`, `relaxationFactor`, or `errorTerms`.
+- Independent cryptanalysis of the AG64/SuperNeo/Hachi profile is still required before making production security claims.
+- Full Apple PQ API tests require `NUMETALQ_ENABLE_APPLE_PQ=1` and a platform/SDK that exposes the relevant CryptoKit ML-KEM, X-Wing HPKE, and ML-DSA types.
+- Benchmark-scale Metal parity and performance validation remains in the manual Apple-silicon validation lane.

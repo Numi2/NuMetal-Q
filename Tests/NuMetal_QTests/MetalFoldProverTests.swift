@@ -9,7 +9,7 @@ final class MetalFoldProverTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let vaultKey = Data("NuMetalQ.Tests.MetalFoldProver.Vault".utf8)
 
-        let prover = try await MetalFoldProver(
+        let prover = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: vaultKey
         )
@@ -20,7 +20,7 @@ final class MetalFoldProverTests: XCTestCase {
         let isValid = try await prover.verify(pcd)
         XCTAssertTrue(isValid)
 
-        let resumedProver = try await MetalFoldProver(
+        let resumedProver = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: vaultKey
         )
@@ -35,13 +35,13 @@ final class MetalFoldProverTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let step = TestFoldStep(compiledShape: compiledShape)
 
-        let prover = try await MetalFoldProver(
+        let prover = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.Right".utf8)
         )
         let pcd = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 19))
 
-        let wrongKeyProver = try await MetalFoldProver(
+        let wrongKeyProver = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.Wrong".utf8)
         )
@@ -58,7 +58,7 @@ final class MetalFoldProverTests: XCTestCase {
         let vaultKey = Data("NuMetalQ.Tests.MetalFoldProver.Tamper".utf8)
         let step = TestFoldStep(compiledShape: compiledShape)
 
-        let prover = try await MetalFoldProver(
+        let prover = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: vaultKey
         )
@@ -69,7 +69,7 @@ final class MetalFoldProverTests: XCTestCase {
         bytes[bytes.index(before: bytes.endIndex)] ^= 0x01
         try bytes.write(to: vaultURL, options: .atomic)
 
-        let resumedProver = try await MetalFoldProver(
+        let resumedProver = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: vaultKey
         )
@@ -86,13 +86,13 @@ final class MetalFoldProverTests: XCTestCase {
         let vaultKey = Data("NuMetalQ.Tests.MetalFoldProver.MissingStep".utf8)
         let step = TestFoldStep(compiledShape: compiledShape)
 
-        let prover = try await MetalFoldProver(
+        let prover = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: vaultKey
         )
         let pcd = try await prover.seed(step, witness: AcceptanceSupport.makeWitness(seed: 29))
 
-        let resumedProver = try await MetalFoldProver(
+        let resumedProver = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: vaultKey
         )
@@ -106,7 +106,7 @@ final class MetalFoldProverTests: XCTestCase {
         let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "MetalFoldForgedHeader")
         let vaultDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let prover = try await MetalFoldProver(
+        let prover = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.ForgedHeader".utf8)
         )
@@ -131,7 +131,7 @@ final class MetalFoldProverTests: XCTestCase {
         let compiledShape = try AcceptanceSupport.makeConstrainedCompiledShape(name: "MetalFoldForgedChild")
         let vaultDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let prover = try await MetalFoldProver(
+        let prover = try await makeMetalFoldProver(
             vaultDirectory: vaultDirectory,
             vaultKeyMaterial: Data("NuMetalQ.Tests.MetalFoldProver.ForgedChild".utf8)
         )
@@ -160,6 +160,31 @@ final class MetalFoldProverTests: XCTestCase {
             guard case .unsupportedStoredState = error else {
                 return XCTFail("Unexpected prover error: \(error)")
             }
+        }
+    }
+}
+
+private func makeMetalFoldProver(
+    profile: NuProfile = .canonical,
+    policy: NuPolicy = .standard,
+    vaultDirectory: URL? = nil,
+    vaultKeyMaterial: Data,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async throws -> MetalFoldProver {
+    do {
+        return try await MetalFoldProver(
+            profile: profile,
+            policy: policy,
+            vaultDirectory: vaultDirectory,
+            vaultKeyMaterial: vaultKeyMaterial
+        )
+    } catch let error as NuMetalError {
+        switch error {
+        case .noGPU, .unsupportedCPUArchitecture, .unsupportedGPUFamily:
+            throw XCTSkip("MetalFoldProver unavailable on this host: \(error)", file: file, line: line)
+        default:
+            throw error
         }
     }
 }

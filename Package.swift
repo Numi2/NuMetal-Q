@@ -63,14 +63,6 @@ let package = Package(
             name: "NuMetal_QTests",
             dependencies: ["NuMetal_Q"],
             path: "Tests/NuMetal_QTests",
-            exclude: [
-                "ApplePQIntegrationTests.swift",
-                "ClusterWorkPacketTests.swift",
-                "CryptoHardeningTests.swift",
-                "EnvelopeSecurityTests.swift",
-                "MetalFoldProverTests.swift",
-                "ProofContextValidationTests.swift",
-            ],
             swiftSettings: applePQSwiftSettings
         ),
     ]

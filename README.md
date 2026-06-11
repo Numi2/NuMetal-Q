@@ -22,7 +22,7 @@ Recent implementation work is focused on the Metal-first seal path:
 - `NuMetal-Q/`: library sources grouped by subsystem.
 - `SealXOF/`: C Keccak/XOF helper target used by seal proof code.
 - `Examples/`: acceptance demo and benchmark runners.
-- `Tests/`: default CPU-safe unit tests plus heavier integration suites kept out of the default SwiftPM test target.
+- `Tests/`: default SwiftPM tests, including codec, transcript, envelope, sync, vault, cluster, and crypto-hardening negative coverage. Metal-specific tests skip on hosts without a supported Metal device; Apple PQ tests are compiled only when `NUMETALQ_ENABLE_APPLE_PQ=1`.
 - `docs/`: development, testing, benchmarking, protocol, and state-of-the-art notes.
 - `Scripts/build_metal_artifacts.sh`: rebuilds the offline Metal artifact bundle.
 - `Scripts/run_apple_silicon_validation.sh`: manual Apple-silicon validation lane for Metal proving and CPU/Metal parity.

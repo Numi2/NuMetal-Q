@@ -592,42 +592,35 @@ public struct JobFragment: Sendable {
     }
 
     private func signingPayload(includeAttestation: Bool) -> Data {
-        var payload = Data()
-        payload.append(contentsOf: withUnsafeBytes(of: fragmentID.uuid) { Array($0) })
-        payload.append(contentsOf: withUnsafeBytes(of: sessionID.uuid) { Array($0) })
-        payload.append(kindBytes())
-        payload.append(contentsOf: shapeDigest.bytes)
-        var laneCount = UInt32(clamping: laneClasses.count)
-        payload.append(contentsOf: withUnsafeBytes(of: &laneCount) { Data($0) })
+        var writer = BinaryWriter()
+        writer.append(Data(withUnsafeBytes(of: fragmentID.uuid) { Array($0) }))
+        writer.append(Data(withUnsafeBytes(of: sessionID.uuid) { Array($0) }))
+        writer.append(kindBytes())
+        writer.append(Data(shapeDigest.bytes))
+        writer.append(UInt32(laneClasses.count))
         for laneID in laneClasses.keys.sorted() {
             let laneIDData = Data(laneID.utf8)
-            var laneIDLength = UInt16(clamping: laneIDData.count)
-            payload.append(contentsOf: withUnsafeBytes(of: &laneIDLength) { Data($0) })
-            payload.append(laneIDData)
-            payload.append(laneClasses[laneID]!.rawValue)
+            precondition(laneIDData.count <= Int(UInt16.max), "cluster lane identifier is too large")
+            writer.append(UInt16(laneIDData.count))
+            writer.append(laneIDData)
+            writer.append(laneClasses[laneID]!.rawValue)
         }
-        var confinedCount = UInt32(clamping: confinedIndices.count)
-        payload.append(contentsOf: withUnsafeBytes(of: &confinedCount) { Data($0) })
+        writer.append(UInt32(confinedIndices.count))
         for index in confinedIndices {
+            precondition(index >= 0, "confined lane index must be nonnegative")
             var raw = Int64(index).littleEndian
-            payload.append(contentsOf: withUnsafeBytes(of: &raw) { Data($0) })
+            writer.append(Data(withUnsafeBytes(of: &raw) { Array($0) }))
         }
-        var count = UInt32(clamping: encryptedPayload.count)
-        payload.append(contentsOf: withUnsafeBytes(of: &count) { Data($0) })
-        payload.append(encryptedPayload)
+        writer.appendLengthPrefixed(encryptedPayload)
         if includeAttestation {
             if let attestation {
-                var attestationCount = UInt32(clamping: attestation.count)
-                payload.append(contentsOf: withUnsafeBytes(of: &attestationCount) { Data($0) })
-                payload.append(attestation)
+                writer.appendLengthPrefixed(attestation)
             } else {
-                var attestationCount: UInt32 = 0
-                payload.append(contentsOf: withUnsafeBytes(of: &attestationCount) { Data($0) })
+                writer.append(UInt32(0))
             }
         }
-        var ts = timestamp.timeIntervalSince1970
-        payload.append(contentsOf: withUnsafeBytes(of: &ts) { Data($0) })
-        return payload
+        writer.append(timestamp.timeIntervalSince1970)
+        return writer.data
     }
 
     private func kindBytes() -> Data {
@@ -720,15 +713,12 @@ public struct FragmentResult: Sendable {
     public let timestamp: Date
 
     public func signingPayload() -> Data {
-        var payload = Data()
-        payload.append(contentsOf: withUnsafeBytes(of: fragmentID.uuid) { Array($0) })
-        payload.append(contentsOf: withUnsafeBytes(of: sessionID.uuid) { Array($0) })
-        var count = UInt32(clamping: encryptedResult.count)
-        payload.append(contentsOf: withUnsafeBytes(of: &count) { Data($0) })
-        payload.append(encryptedResult)
-        var ts = timestamp.timeIntervalSince1970
-        payload.append(contentsOf: withUnsafeBytes(of: &ts) { Data($0) })
-        return payload
+        var writer = BinaryWriter()
+        writer.append(Data(withUnsafeBytes(of: fragmentID.uuid) { Array($0) }))
+        writer.append(Data(withUnsafeBytes(of: sessionID.uuid) { Array($0) }))
+        writer.appendLengthPrefixed(encryptedResult)
+        writer.append(timestamp.timeIntervalSince1970)
+        return writer.data
     }
 }
 

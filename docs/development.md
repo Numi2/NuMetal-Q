@@ -17,10 +17,11 @@ swift run NuMetalQBenchmarks --list-workloads
 ## Environment Notes
 
 - GPU-backed tests and end-to-end proving flows require Apple silicon plus a supported Apple GPU family.
-- CPU-safe tests are the default SwiftPM and CI lane.
+- Crypto/security tests are part of the default SwiftPM and CI lane.
+- Metal-dependent tests skip on hosts without a supported Apple GPU.
 - `Scripts/run_apple_silicon_validation.sh [OUTPUT_DIR]` is the manual local validation lane for Metal proving and CPU/Metal verification parity.
 - `Scripts/build_metal_artifacts.sh` requires Xcode command-line tools with `xcrun metal` and `xcrun metallib`.
-- Heavy integration, Metal parity, and Apple PQ test sources are excluded from the default SwiftPM test target until they are explicitly revived.
+- Apple PQ integration tests compile only when `NUMETALQ_ENABLE_APPLE_PQ=1` is set.
 
 ## Docs Drift
 

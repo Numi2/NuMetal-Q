@@ -37,24 +37,16 @@ public struct SyncMessage: Sendable {
     public let timestamp: Date
 
     public func signingPayload() -> Data {
-        var payload = Data()
-        payload.append(contentsOf: withUnsafeBytes(of: messageID.uuid) { Array($0) })
-        payload.append(contentsOf: withUnsafeBytes(of: senderDeviceID.uuid) { Array($0) })
-        payload.append(contentsOf: withUnsafeBytes(of: recipientDeviceID.uuid) { Array($0) })
-
-        func appendLengthPrefixed(_ value: Data) {
-            var count = UInt32(clamping: value.count)
-            payload.append(contentsOf: withUnsafeBytes(of: &count) { Data($0) })
-            payload.append(value)
-        }
-
-        appendLengthPrefixed(encapsulatedKey)
-        appendLengthPrefixed(ciphertext)
-        appendLengthPrefixed(nonce)
-        appendLengthPrefixed(tag)
-        var ts = timestamp.timeIntervalSince1970
-        payload.append(contentsOf: withUnsafeBytes(of: &ts) { Data($0) })
-        return payload
+        var writer = BinaryWriter()
+        writer.append(Data(withUnsafeBytes(of: messageID.uuid) { Array($0) }))
+        writer.append(Data(withUnsafeBytes(of: senderDeviceID.uuid) { Array($0) }))
+        writer.append(Data(withUnsafeBytes(of: recipientDeviceID.uuid) { Array($0) }))
+        writer.appendLengthPrefixed(encapsulatedKey)
+        writer.appendLengthPrefixed(ciphertext)
+        writer.appendLengthPrefixed(nonce)
+        writer.appendLengthPrefixed(tag)
+        writer.append(timestamp.timeIntervalSince1970)
+        return writer.data
     }
 }
 
@@ -342,18 +334,13 @@ public actor SyncChannel {
         encapsulatedKey: Data,
         timestamp: Date
     ) -> Data {
-        var data = Data()
-        data.append(contentsOf: withUnsafeBytes(of: messageID.uuid) { Array($0) })
-        data.append(contentsOf: withUnsafeBytes(of: senderDeviceID.uuid) { Array($0) })
-        data.append(contentsOf: withUnsafeBytes(of: recipientDeviceID.uuid) { Array($0) })
-
-        var encapsulatedCount = UInt32(clamping: encapsulatedKey.count)
-        data.append(contentsOf: withUnsafeBytes(of: &encapsulatedCount) { Data($0) })
-        data.append(encapsulatedKey)
-
-        var ts = timestamp.timeIntervalSince1970
-        data.append(contentsOf: withUnsafeBytes(of: &ts) { Data($0) })
-        return data
+        var writer = BinaryWriter()
+        writer.append(Data(withUnsafeBytes(of: messageID.uuid) { Array($0) }))
+        writer.append(Data(withUnsafeBytes(of: senderDeviceID.uuid) { Array($0) }))
+        writer.append(Data(withUnsafeBytes(of: recipientDeviceID.uuid) { Array($0) }))
+        writer.appendLengthPrefixed(encapsulatedKey)
+        writer.append(timestamp.timeIntervalSince1970)
+        return writer.data
     }
 
     private func messageKey(encapsulatedKey: Data) -> SymmetricKey {

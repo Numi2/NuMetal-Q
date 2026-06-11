@@ -4,7 +4,7 @@ NuMetal-Q has one default validation lane and one manual hardware lane:
 
 ## 1. CPU-safe CI lane
 
-These checks are intended to run on generic macOS CI without assuming Apple silicon or a working Metal device. The default SwiftPM test target is pruned to this lane.
+These checks are intended to run on generic macOS CI without assuming Apple silicon or a working Metal device. The default SwiftPM test target includes the security and crypto-hardening suites; Metal-dependent tests skip when a supported device is unavailable, and Apple PQ integration tests are enabled only with `NUMETALQ_ENABLE_APPLE_PQ=1`.
 
 ```bash
 Scripts/check_repo_metadata.sh
@@ -31,7 +31,9 @@ The script now prints stage names before each command so failures are classified
 - transcript vectors and deterministic challenge derivation
 - witness packing and canonical ring embedding
 - binary codec and cSHAKE/XOF helpers
-- sync envelope encryption, attestation, and replay defense
-- vault serialization and attestation/security boundaries
+- envelope signature, namespace, attestation, and proof-format rejection paths
+- sync envelope encryption, strict attestation binding, and replay defense
+- vault serialization, typed prover persistence, tamper rejection, and policy boundaries
+- cluster work packet validation, delegation attestation, and replay defense
 
-The CI lane is the correctness floor. GPU-assisted proving, packed-witness representability preflight, direct-packed Metal final-opening work, and end-to-end CPU/Metal parity remain manual hardware checks.
+The CI lane is the correctness floor. Long-running benchmark/report validation, packed-witness representability preflight at benchmark scale, direct-packed Metal final-opening performance work, and end-to-end CPU/Metal parity remain manual hardware checks.
